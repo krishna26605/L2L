@@ -1,0 +1,50 @@
+{
+  "name": "zerowaste-dinemap",
+  "version": "1.0.0",
+  "description": "ZeroWaste DineMap - Food donation platform connecting donors with NGOs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "cd backend && npm start",
+    "start:frontend": "cd frontend && npm start",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd backend && npm test",
+    "test:frontend": "cd frontend && npm test"
+  },
+  "keywords": [
+    "zerowaste",
+    "food-donation",
+    "nextjs",
+    "express",
+    "firebase",
+    "google-maps",
+    "react",
+    "nodejs"
+  ],
+  "author": "ZeroWaste Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/zerowaste-dinemap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/zerowaste-dinemap/issues"
+  },
+  "homepage": "https://github.com/your-username/zerowaste-dinemap#readme"
+}
