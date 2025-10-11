@@ -25,7 +25,7 @@ export const uploadController = {
       fs.writeFileSync(filePath, req.file.buffer);
 
       // Generate public URL (adjust based on your server setup)
-      const publicUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/api/uploads/${fileName}`;
+      const publicUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/uploads/${fileName}`;
 
       res.json({
         success: true,
@@ -91,7 +91,7 @@ export const uploadController = {
           const stats = fs.statSync(filePath);
           return {
             fileName: file,
-            url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/api/uploads/${file}`,
+            url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/uploads/${file}`,
             uploadedAt: stats.birthtime.toISOString(),
             size: stats.size,
             contentType: `image/${path.extname(file).slice(1)}`
@@ -131,7 +131,7 @@ export const uploadController = {
 
       const imageInfo = {
         fileName: fileName,
-        url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/api/uploads/${fileName}`,
+        url: `${process.env.BACKEND_URL || 'http://localhost:5000'}/uploads/${fileName}`,
         uploadedBy: req.user._id,
         uploadedAt: stats.birthtime.toISOString(),
         size: stats.size,

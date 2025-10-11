@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Upload, MapPin, Clock, Package, AlertCircle } from 'lucide-react';
+import { X, Upload, MapPin, Clock, Package, AlertCircle, Navigation } from 'lucide-react';
 import { donationsAPI, uploadAPI } from '../../lib/api';
 import { useGoogleMaps } from '../../hooks/useGoogleMaps';
 import toast from 'react-hot-toast';
@@ -18,9 +18,10 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [locationLoading, setLocationLoading] = useState(false);
   
   const locationInputRef = useRef(null);
-  const { isLoaded, loadError, createAutocomplete } = useGoogleMaps();
+  const { isLoaded, loadError, createAutocomplete, getCurrentLocation, reverseGeocode } = useGoogleMaps();
 
   // Initialize autocomplete when Google Maps is loaded
   useEffect(() => {
@@ -105,6 +106,43 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
   const removeImage = () => {
     setImage(null);
     setImagePreview('');
+  };
+
+  const handleGetCurrentLocation = async () => {
+    if (!isLoaded) {
+      toast.error('Google Maps is not loaded yet. Please wait.');
+      return;
+    }
+
+    setLocationLoading(true);
+    try {
+      const position = await getCurrentLocation();
+      const locationData = await reverseGeocode(position.lat, position.lng);
+      
+      setFormData(prev => ({
+        ...prev,
+        location: {
+          address: locationData.address,
+          lat: locationData.lat,
+          lng: locationData.lng
+        }
+      }));
+      
+      toast.success('Current location detected!');
+    } catch (error) {
+      console.error('Error getting current location:', error);
+      if (error.code === 1) {
+        toast.error('Location access denied. Please allow location access or enter address manually.');
+      } else if (error.code === 2) {
+        toast.error('Location unavailable. Please enter address manually.');
+      } else if (error.code === 3) {
+        toast.error('Location request timed out. Please try again or enter address manually.');
+      } else {
+        toast.error('Failed to get current location. Please enter address manually.');
+      }
+    } finally {
+      setLocationLoading(false);
+    }
   };
 
   const validateForm = () => {
@@ -425,23 +463,45 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
               <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">
                 Pickup Address *
               </label>
-              <input
-                ref={locationInputRef}
-                type="text"
-                id="location"
-                name="location.address"
-                value={formData.location.address}
-                onChange={handleInputChange}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
-                  errors.location ? 'border-red-300' : 'border-gray-300'
-                }`}
-                placeholder="Enter address for pickup"
-                disabled={loading}
-              />
+              <div className="flex space-x-2">
+                <input
+                  ref={locationInputRef}
+                  type="text"
+                  id="location"
+                  name="location.address"
+                  value={formData.location.address}
+                  onChange={handleInputChange}
+                  className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent ${
+                    errors.location ? 'border-red-300' : 'border-gray-300'
+                  }`}
+                  placeholder="Enter address for pickup or use current location"
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  onClick={handleGetCurrentLocation}
+                  disabled={loading || locationLoading || !isLoaded}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                  title="Use current location"
+                >
+                  {locationLoading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  ) : (
+                    <Navigation className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">Current</span>
+                </button>
+              </div>
               {errors.location && (
                 <p className="mt-1 text-sm text-red-600 flex items-center">
                   <AlertCircle className="h-4 w-4 mr-1" />
                   {errors.location}
+                </p>
+              )}
+              {!isLoaded && (
+                <p className="mt-1 text-sm text-yellow-600 flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-1" />
+                  Google Maps is loading... Location features will be available shortly.
                 </p>
               )}
             </div>

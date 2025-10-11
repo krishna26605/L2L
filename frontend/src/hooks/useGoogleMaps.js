@@ -58,9 +58,76 @@ export const useGoogleMaps = () => {
     document.head.appendChild(script);
   }, []);
 
+  // Create autocomplete function
+  const createAutocomplete = (inputElement, options = {}) => {
+    if (!isLoaded || !window.google || !window.google.maps.places) {
+      throw new Error('Google Maps Places library not loaded');
+    }
+
+    const autocomplete = new window.google.maps.places.Autocomplete(inputElement, {
+      types: ['address'],
+      ...options
+    });
+
+    return autocomplete;
+  };
+
+  // Get current location function
+  const getCurrentLocation = () => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by this browser'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        },
+        (error) => {
+          reject(error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000,
+        }
+      );
+    });
+  };
+
+  // Reverse geocode function
+  const reverseGeocode = (lat, lng) => {
+    return new Promise((resolve, reject) => {
+      if (!isLoaded || !window.google) {
+        reject(new Error('Google Maps not loaded'));
+        return;
+      }
+
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          resolve({
+            address: results[0].formatted_address,
+            lat,
+            lng,
+          });
+        } else {
+          reject(new Error('Reverse geocoding failed: ' + status));
+        }
+      });
+    });
+  };
+
   return {
     isLoaded,
-    loadError
+    loadError,
+    createAutocomplete,
+    getCurrentLocation,
+    reverseGeocode
   };
 };
 

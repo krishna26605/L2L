@@ -46,15 +46,25 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
       {/* Image */}
-      {donation.imageUrl && (
-        <div className="h-48 bg-gray-200">
+      <div className="h-48 bg-gray-200">
+        {donation.imageUrl ? (
           <img
             src={donation.imageUrl}
             alt={donation.title}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'flex';
+            }}
           />
+        ) : null}
+        <div 
+          className="w-full h-full flex items-center justify-center text-gray-500"
+          style={{ display: donation.imageUrl ? 'none' : 'flex' }}
+        >
+          <Package className="h-12 w-12" />
         </div>
-      )}
+      </div>
 
       <div className="p-6">
         {/* Header */}
@@ -113,6 +123,15 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
             <p className="text-xs text-orange-600 mt-1">
               Pickup window: {formatDate(donation.pickupWindow.start)} - {formatDate(donation.pickupWindow.end)}
             </p>
+            <div className="mt-3">
+              <button
+                onClick={() => onViewRoute(donation)}
+                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                <Navigation className="h-4 w-4" />
+                <span>Get Directions to Pickup</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -137,10 +156,14 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
           <div className="flex space-x-2">
             <button
               onClick={() => onViewRoute(donation)}
-              className="flex items-center space-x-1 px-3 py-1 text-sm text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+              className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
+                donation.status === 'claimed' 
+                  ? 'text-white bg-blue-600 hover:bg-blue-700' 
+                  : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+              }`}
             >
               <Navigation className="h-4 w-4" />
-              <span>Directions</span>
+              <span>{donation.status === 'claimed' ? 'Get Directions' : 'Directions'}</span>
             </button>
             
             {donation.status === 'available' && (

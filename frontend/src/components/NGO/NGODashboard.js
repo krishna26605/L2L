@@ -95,6 +95,14 @@ export const NGODashboard = () => {
     try {
       await donationsAPI.claim(donation._id);
       toast.success('Donation claimed successfully!');
+      
+      // Show directions option after claiming
+      setTimeout(() => {
+        if (confirm('Would you like to get directions to the pickup location?')) {
+          handleViewRoute(donation);
+        }
+      }, 1000);
+      
       fetchDonations();
       fetchMyDonations();
     } catch (error) {
@@ -104,22 +112,68 @@ export const NGODashboard = () => {
   };
 
   const handleViewRoute = (donation) => {
+    if (!donation.location) {
+      toast.error('Location information not available for this donation');
+      return;
+    }
+
+    const openDirections = (userLat, userLng) => {
+      if (donation.location.lat && donation.location.lng) {
+        // Use coordinates for precise navigation
+        const url = `https://www.google.com/maps/dir/${userLat},${userLng}/${donation.location.lat},${donation.location.lng}/@${donation.location.lat},${donation.location.lng},15z/data=!4m2!4m1!3e0`;
+        window.open(url, '_blank');
+      } else {
+        // Fallback to address-based navigation
+        const url = `https://www.google.com/maps/dir/${userLat},${userLng}/${encodeURIComponent(donation.location.address)}`;
+        window.open(url, '_blank');
+      }
+    };
+
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        // Open in Google Maps with turn-by-turn navigation
-        const url = `https://www.google.com/maps/dir/${latitude},${longitude}/${donation.location.lat},${donation.location.lng}/@${donation.location.lat},${donation.location.lng},15z/data=!4m2!4m1!3e0`;
-        window.open(url, '_blank');
-      }, (error) => {
-        console.error('Error getting current location:', error);
-        // Fallback: open destination directly
-        const url = `https://www.google.com/maps/search/${donation.location.address}`;
-        window.open(url, '_blank');
-      });
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          openDirections(latitude, longitude);
+        }, 
+        (error) => {
+          console.error('Error getting current location:', error);
+          let errorMessage = 'Unable to get your current location. ';
+          
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage += 'Please allow location access or use the address below.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage += 'Location information is unavailable.';
+              break;
+            case error.TIMEOUT:
+              errorMessage += 'Location request timed out.';
+              break;
+            default:
+              errorMessage += 'An unknown error occurred.';
+              break;
+          }
+          
+          toast.error(errorMessage);
+          
+          // Fallback: open destination directly
+          const fallbackUrl = donation.location.lat && donation.location.lng 
+            ? `https://www.google.com/maps/search/${donation.location.lat},${donation.location.lng}`
+            : `https://www.google.com/maps/search/${encodeURIComponent(donation.location.address)}`;
+          window.open(fallbackUrl, '_blank');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000
+        }
+      );
     } else {
       // Fallback for browsers without geolocation
-      const url = `https://www.google.com/maps/search/${donation.location.address}`;
-      window.open(url, '_blank');
+      const fallbackUrl = donation.location.lat && donation.location.lng 
+        ? `https://www.google.com/maps/search/${donation.location.lat},${donation.location.lng}`
+        : `https://www.google.com/maps/search/${encodeURIComponent(donation.location.address)}`;
+      window.open(fallbackUrl, '_blank');
     }
   };
 
