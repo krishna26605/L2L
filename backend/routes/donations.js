@@ -18,3 +18,4 @@ router.post('/:id/claim', authController.verifyToken, donationController.claimDo
 router.post('/:id/pickup', authController.verifyToken, donationController.markAsPicked);
 
 export default router;
+
