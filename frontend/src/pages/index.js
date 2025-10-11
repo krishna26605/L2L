@@ -15,7 +15,7 @@ export default function Home() {
       if (user.role === 'donor') {
         router.push('/donor-dashboard');
       } else if (user.role === 'ngo') {
-        router.push('/ngo');
+        router.push('/ngo-dashboard');
       }
     }
   }, [user, loading, router]);
