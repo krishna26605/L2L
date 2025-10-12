@@ -62,41 +62,43 @@ export const NGODashboard = () => {
   }, [donations, myDonations, filter]);
 
   const fetchDonations = async () => {
-    try {
-      setLoading(true);
-      
-      // For NGOs, try to get their location and pass it to the API
-      let params = {};
-      if (user && user.role === 'ngo' && user.location && user.location.coordinates) {
-        params.ngoLocation = {
-          lat: user.location.coordinates.lat,
-          lng: user.location.coordinates.lng
-        };
-        console.log('📍 Fetching donations for NGO with location:', params.ngoLocation);
-      }
-      
-      const response = await donationsAPI.getAll(params);
-      const donationsData = response.data.donations;
-
-      // Detect new donations
-      const prevDonations = prevDonationsRef.current;
-      const newDonations = donationsData.filter(d => !prevDonations.some(pd => pd.id === d.id));
-
-      if (newDonations.length > 0) {
-        setNotification(`New donation${newDonations.length > 1 ? 's' : ''} added!`);
-        // Clear notification after 5 seconds
-        setTimeout(() => setNotification(null), 5000);
-      }
-
-      prevDonationsRef.current = donationsData;
-      setDonations(donationsData);
-    } catch (error) {
-      console.error('Error fetching donations:', error);
-      toast.error('Failed to load donations');
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    
+    console.log('🏢 NGO Dashboard - Fetching donations...');
+    
+    // For NGOs, try to get their location and pass it to the API
+    let params = {};
+    if (user && user.role === 'ngo') {
+      // The backend now automatically uses the NGO's location from their profile
+      // We don't need to pass location in params anymore
+      console.log('📍 NGO user - backend will handle location filtering automatically');
     }
-  };
+    
+    const response = await donationsAPI.getAll(params);
+    const donationsData = response.data.donations;
+    
+    console.log('📊 NGO Dashboard - Received donations:', donationsData.length);
+    console.log('📋 Response metadata:', response.data.metadata);
+
+    // Detect new donations
+    const prevDonations = prevDonationsRef.current;
+    const newDonations = donationsData.filter(d => !prevDonations.some(pd => pd._id === d._id));
+
+    if (newDonations.length > 0) {
+      setNotification(`New donation${newDonations.length > 1 ? 's' : ''} added!`);
+      setTimeout(() => setNotification(null), 5000);
+    }
+
+    prevDonationsRef.current = donationsData;
+    setDonations(donationsData);
+  } catch (error) {
+    console.error('❌ Error fetching donations:', error);
+    toast.error('Failed to load donations');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const fetchMyDonations = async () => {
     try {
@@ -218,45 +220,48 @@ export const NGODashboard = () => {
   };
 
   const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          const location = {
-            coordinates: {
-              lat: latitude,
-              lng: longitude
-            }
-          };
-          
-          try {
-            // Update user profile with location
-            await updateUserProfile({ location });
-            setNgoLocation(location);
-            setShowLocationSetup(false);
-            toast.success('Location set successfully!');
-            
-            // Refresh donations with new location
-            fetchDonations();
-          } catch (error) {
-            console.error('Error saving location:', error);
-            toast.error('Failed to save location');
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const location = {
+          address: 'Current Location', // You might want to reverse geocode this
+          coordinates: {
+            lat: latitude,
+            lng: longitude
           }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          toast.error('Unable to get your location. Please allow location access.');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000
+        };
+        
+        console.log('📍 Setting NGO location:', location);
+        
+        try {
+          // Update user profile with location
+          await updateUserProfile({ location });
+          setNgoLocation(location);
+          setShowLocationSetup(false);
+          toast.success('Location set successfully! Refreshing nearby donations...');
+          
+          // Refresh donations with new location - the backend will now filter automatically
+          fetchDonations();
+        } catch (error) {
+          console.error('❌ Error saving location:', error);
+          toast.error('Failed to save location');
         }
-      );
-    } else {
-      toast.error('Geolocation is not supported by this browser.');
-    }
-  };
+      },
+      (error) => {
+        console.error('❌ Error getting location:', error);
+        toast.error('Unable to get your location. Please allow location access.');
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000
+      }
+    );
+  } else {
+    toast.error('Geolocation is not supported by this browser.');
+  }
+};
 
   const stats = {
     available: donations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date()).length,
