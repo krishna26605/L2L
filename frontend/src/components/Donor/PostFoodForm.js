@@ -192,7 +192,8 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
     }
   };
 
-  const handleSubmit = async (e) => {
+  // In PostFoodForm.js - handleSubmit function ko update karo
+const handleSubmit = async (e) => {
   e.preventDefault();
   
   if (!validateForm()) {
@@ -205,7 +206,7 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
   try {
     let imageUrl = '';
     
-    // Upload image if selected, but don't fail the entire submission if image upload fails
+    // Upload image if selected
     if (image) {
       try {
         imageUrl = await uploadImage(image);
@@ -213,19 +214,27 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
       } catch (uploadError) {
         console.warn('Image upload failed, continuing without image:', uploadError);
         toast.error('Image upload failed. Posting donation without image.');
-        // Continue without the image - don't throw error
       }
     }
 
-    // Prepare donation data
+    // ✅ FIXED: Proper location structure with coordinates
     const donationData = {
       title: formData.title,
       description: formData.description,
       quantity: formData.quantity,
       foodType: formData.foodType,
       expiryTime: formData.expiryTime,
-      pickupWindow: formData.pickupWindow,
-      location: formData.location,
+      pickupWindow: {
+        start: formData.pickupWindow.start,
+        end: formData.pickupWindow.end
+      },
+      location: {
+        address: formData.location.address,
+        coordinates: {  // ✅ YEH IMPORTANT HAI - coordinates object me daalo
+          lat: formData.location.lat,
+          lng: formData.location.lng
+        }
+      },
       status: 'available'
     };
 
@@ -235,20 +244,40 @@ export const PostFoodForm = ({ onClose, onSuccess }) => {
     }
 
     console.log('📦 Submitting donation data:', JSON.stringify(donationData, null, 2));
-    console.log('📍 Location data:', donationData.location);
-    console.log('⏰ Pickup window:', donationData.pickupWindow);
+    console.log('📍 Location with coordinates:', donationData.location);
     
     const response = await donationsAPI.create(donationData);
     console.log('✅ Donation posted successfully:', response.data);
     
-    toast.success('Donation posted successfully!');
-    onSuccess();
+    toast.success('🎉 Donation posted successfully! NGOs near you will be notified.');
+    
+    // Reset form
+    setFormData({
+      title: '',
+      description: '',
+      quantity: '',
+      foodType: 'prepared',
+      expiryTime: '',
+      pickupWindow: { start: '', end: '' },
+      location: { address: '', lat: 0, lng: 0 }
+    });
+    setImage(null);
+    setImagePreview('');
+    
+    if (onSuccess) {
+      onSuccess();
+    } else {
+      onClose();
+    }
+    
   } catch (error) {
     console.error('❌ Post donation error:', error);
-    console.error('❌ Error response:', error.response?.data);
-    console.error('❌ Error status:', error.response?.status);
+    let errorMessage = 'Failed to post donation';
     
-    const errorMessage = error.response?.data?.error || error.message || 'Failed to post donation';
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    }
+    
     toast.error(`Donation failed: ${errorMessage}`);
   } finally {
     setLoading(false);

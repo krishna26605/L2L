@@ -204,7 +204,7 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
         {/* Debug info */}
         {process.env.NODE_ENV === 'development' && donation.imageUrl && (
           <div>
-            {/* <p><strong>Debug Image Info:</strong></p>
+            <p><strong>Debug Image Info:</strong></p>
             <p><strong>DB URL:</strong> {donation.imageUrl}</p>
             <p><strong>Processed:</strong> {imageUrl}</p>
             <p><strong>Status:</strong> {imageLoaded ? '✅ Loaded' : imageError ? '❌ Error' : '⏳ Loading'}</p>
@@ -213,7 +213,7 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
               className="mt-1 text-blue-600 underline text-xs"
             >
               Test URL in new tab
-            </button> */}
+            </button>
           </div>
         )}
       </div>

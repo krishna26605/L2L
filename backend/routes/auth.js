@@ -17,6 +17,9 @@ router.post('/login', [
   body('password').notEmpty()
 ], authController.login);
 
+// ✅ NEW: Get NGOs near location (public route for donors)
+router.get('/ngos/nearby', authController.getNGOsNearLocation);
+
 // Protected routes (require authentication)
 router.get('/profile', authController.verifyToken, authController.getProfile);
 router.put('/profile', authController.verifyToken, authController.updateProfile);

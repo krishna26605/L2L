@@ -29,13 +29,19 @@ export const AuthProvider = ({ children }) => {
       
       console.log('🔄 AuthProvider mounting - localStorage data:', { 
         storedUser: !!storedUser, 
-        token: !!token 
+        token: !!token,
+        role: storedUser?.role,
+        hasLocation: !!(storedUser?.location)
       });
       
       if (storedUser && token) {
         try {
           setUser(storedUser);
-          console.log('✅ Restored user from localStorage:', storedUser.email);
+          console.log('✅ Restored user from localStorage:', { 
+            email: storedUser.email, 
+            role: storedUser.role,
+            hasLocation: !!(storedUser.location)
+          });
           
           // ✅ Server se verify karo (optional)
           try {
@@ -45,7 +51,10 @@ export const AuthProvider = ({ children }) => {
               setUser(serverUser);
               // ✅ Update localStorage with fresh data
               AuthStorage.setAuthData(token, serverUser);
-              console.log('✅ Updated user from server profile');
+              console.log('✅ Updated user from server profile:', {
+                role: serverUser.role,
+                hasLocation: !!(serverUser.location)
+              });
             }
           } catch (error) {
             console.error('❌ Profile verification failed:', error?.response?.data || error.message);
@@ -75,7 +84,11 @@ export const AuthProvider = ({ children }) => {
       
       if (response.data) {
         setUser(response.data.user);
-        console.log('👤 User set in context:', response.data.user);
+        console.log('👤 User set in context:', { 
+          email: response.data.user.email,
+          role: response.data.user.role,
+          hasLocation: !!(response.data.user.location)
+        });
         return response.data;
       } else {
         throw new Error('Invalid response format from server');
@@ -86,16 +99,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const signUp = async (email, password, displayName, role) => {
+  // ✅ UPDATED: signUp function to handle new NGO location data structure
+  const signUp = async (signupData) => {
     try {
-      console.log('🔐 useAuth: Attempting registration for:', email, 'as', role);
+      console.log('🔐 useAuth: Attempting registration for:', signupData.email, 'as', signupData.role);
+      console.log('📍 Location data:', signupData.role === 'ngo' ? signupData.location : 'Not required for donor');
       
-      const response = await authAPI.register({ email, password, displayName, role });
+      const response = await authAPI.register(signupData);
       console.log('✅ useAuth: Registration successful - full response:', response.data);
       
       if (response.data) {
         setUser(response.data.user);
-        console.log('👤 User set in context:', response.data.user);
+        console.log('👤 User set in context:', { 
+          email: response.data.user.email,
+          role: response.data.user.role,
+          hasLocation: !!(response.data.user.location)
+        });
         return response.data;
       } else {
         throw new Error('Invalid response format from server');
@@ -106,18 +125,69 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ✅ UPDATED: Enhanced updateUserProfile to handle location validation
   const updateUserProfile = async (data) => {
     try {
+      console.log('🔄 useAuth: Updating profile with data:', data);
+      
       const response = await authAPI.updateProfile(data);
       const updatedUser = response.data?.user || response.data;
+      
       setUser(prev => ({ ...prev, ...updatedUser }));
+      
       // ✅ localStorage update karo
       const { token } = AuthStorage.getAuthData();
       if (token) {
         AuthStorage.setAuthData(token, updatedUser);
       }
+      
+      console.log('✅ Profile updated successfully:', {
+        role: updatedUser.role,
+        hasLocation: !!(updatedUser.location)
+      });
+      
       return response.data;
     } catch (error) {
+      console.error('❌ useAuth: Update profile error:', error.response?.data || error.message);
+      throw error;
+    }
+  };
+
+  // ✅ NEW: Function to specifically update NGO location
+  const updateNGOLocation = async (locationData) => {
+    try {
+      console.log('📍 useAuth: Updating NGO location:', locationData);
+      
+      const response = await authAPI.updateProfile({ location: locationData });
+      const updatedUser = response.data?.user || response.data;
+      
+      setUser(prev => ({ ...prev, ...updatedUser }));
+      
+      // ✅ localStorage update karo
+      const { token } = AuthStorage.getAuthData();
+      if (token) {
+        AuthStorage.setAuthData(token, updatedUser);
+      }
+      
+      console.log('✅ NGO location updated successfully');
+      return response.data;
+    } catch (error) {
+      console.error('❌ useAuth: Update NGO location error:', error.response?.data || error.message);
+      throw error;
+    }
+  };
+
+  // ✅ NEW: Function to get NGOs near a location (for donors)
+  const getNGOsNearLocation = async (lat, lng, radius = 20) => {
+    try {
+      console.log('🗺️ useAuth: Finding NGOs near location:', { lat, lng, radius });
+      
+      const response = await authAPI.getNGOsNearLocation(lat, lng, radius);
+      console.log('✅ Found NGOs:', response.data.ngos?.length || 0);
+      
+      return response.data;
+    } catch (error) {
+      console.error('❌ useAuth: Get NGOs near location error:', error.response?.data || error.message);
       throw error;
     }
   };
@@ -143,14 +213,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ✅ NEW: Helper function to check if user is NGO with location
+  const isNGOWithLocation = () => {
+    return user && user.role === 'ngo' && user.location && user.location.coordinates;
+  };
+
+  // ✅ NEW: Helper function to get user's operational radius
+  const getOperationalRadius = () => {
+    if (user && user.role === 'ngo' && user.ngoDetails) {
+      return user.ngoDetails.operationalRadius || 20;
+    }
+    return 20; // Default radius
+  };
+
   const value = {
     user,
     loading,
     signIn,
     signUp,
     updateUserProfile,
+    updateNGOLocation, // ✅ NEW
+    getNGOsNearLocation, // ✅ NEW
     changePassword,
     logout,
+    isNGOWithLocation, // ✅ NEW
+    getOperationalRadius, // ✅ NEW
   };
 
   return (
@@ -159,150 +246,3 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
-
-
-
-
-
-
-
-// import { useState, useEffect, createContext, useContext } from 'react';
-// import { authAPI } from '../lib/api';
-// import Cookies from 'js-cookie';
-
-// const AuthContext = createContext({});
-
-// export const useAuth = () => {
-//   const context = useContext(AuthContext);
-//   if (!context) {
-//     throw new Error('useAuth must be used within an AuthProvider');
-//   }
-//   return context;
-// };
-
-// export const AuthProvider = ({ children }) => {
-//   const [user, setUser] = useState(null);
-//   const [loading, setLoading] = useState(true);
-
-//   useEffect(() => {
-//     // Check for stored user data on mount
-//     const storedUser = Cookies.get('user');
-//     const storedToken = Cookies.get('auth_token');
-    
-//     console.log('🔄 AuthProvider mounting - stored data:', { storedUser: !!storedUser, storedToken: !!storedToken });
-    
-//     if (storedUser && storedToken) {
-//       try {
-//         const userData = JSON.parse(storedUser);
-//         setUser(userData);
-//         console.log('✅ Restored user from cookies:', userData.email);
-        
-//         // Verify token with server but don't block on error
-//         authAPI.getProfile()
-//           .then(response => {
-//             console.log('✅ Profile verification response:', response);
-//             // Handle different response structures
-//             if (response.data && response.data.user) {
-//               console.log('✅ Updated user from server profile');
-//               setUser(response.data.user);
-//               Cookies.set('user', JSON.stringify(response.data.user), { expires: 7 });
-//             } else if (response.data) {
-//               console.log('✅ Using profile data directly');
-//               setUser(response.data);
-//               Cookies.set('user', JSON.stringify(response.data), { expires: 7 });
-//             }
-//           })
-//           .catch(error => {
-//             console.error('❌ Profile verification failed:', error?.response?.data || error.message);
-//             // Don't clear auth data - keep using stored user
-//           });
-//       } catch (error) {
-//         console.error('❌ Error parsing stored user:', error);
-//         Cookies.remove('user');
-//       }
-//     } else {
-//       console.log('🔍 No stored auth data found');
-//     }
-    
-//     setLoading(false);
-//   }, []);
-
-//   const signIn = async (email, password) => {
-//     try {
-//       console.log('🔐 useAuth: Attempting login for:', email);
-//       const result = await authAPI.login(email, password);
-//       console.log('✅ useAuth: Login successful');
-      
-//       // Note: authAPI.login already stores tokens in cookies
-//       setUser(result.user);
-//       return result;
-//     } catch (error) {
-//       console.error('❌ useAuth: SignIn error:', error.response?.data || error.message);
-//       throw error;
-//     }
-//   };
-
-//   const signUp = async (email, password, displayName, role) => {
-//     try {
-//       const result = await authAPI.register({ email, password, displayName, role });
-//       // Note: authAPI.register already stores tokens in cookies
-//       setUser(result.user);
-//       return result;
-//     } catch (error) {
-//       console.error('❌ useAuth: SignUp error:', error.response?.data || error.message);
-//       throw error;
-//     }
-//   };
-
-//   const updateUserProfile = async (data) => {
-//     try {
-//       const result = await authAPI.updateProfile(data);
-//       const updatedUser = result.user || result;
-//       setUser(prev => ({ ...prev, ...updatedUser }));
-//       // Update stored user data
-//       Cookies.set('user', JSON.stringify(updatedUser), { expires: 7 });
-//       return result;
-//     } catch (error) {
-//       throw error;
-//     }
-//   };
-
-//   const changePassword = async (currentPassword, newPassword) => {
-//     try {
-//       const result = await authAPI.changePassword(currentPassword, newPassword);
-//       return result;
-//     } catch (error) {
-//       throw error;
-//     }
-//   };
-
-//   const logout = async () => {
-//     try {
-//       // Clear cookies
-//       Cookies.remove('auth_token');
-//       Cookies.remove('user');
-//       setUser(null);
-//       console.log('✅ Logout successful');
-//     } catch (error) {
-//       console.error('Logout error:', error);
-//       throw error;
-//     }
-//   };
-
-//   const value = {
-//     user,
-//     loading,
-//     signIn,
-//     signUp,
-//     updateUserProfile,
-//     changePassword,
-//     logout,
-//   };
-
-//   return (
-//     <AuthContext.Provider value={value}>
-//       {children}
-//     </AuthContext.Provider>
-//   );
-// };

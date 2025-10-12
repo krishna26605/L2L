@@ -17,5 +17,7 @@ router.delete('/:id', authController.verifyToken, donationController.deleteDonat
 router.post('/:id/claim', authController.verifyToken, donationController.claimDonation);
 router.post('/:id/pickup', authController.verifyToken, donationController.markAsPicked);
 
-export default router;
+// ✅ NEW: NGO-specific donation endpoint
+router.get('/ngo/my-donations', authController.verifyToken, donationController.getDonationsForMyNGO);
 
+export default router;
