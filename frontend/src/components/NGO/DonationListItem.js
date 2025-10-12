@@ -1,43 +1,84 @@
-import { Clock, MapPin, Package, Navigation, CheckCircle, AlertCircle } from 'lucide-react';
+import { Clock, MapPin, Package, Navigation, CheckCircle, AlertCircle, Camera } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
+  const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
+
+  // ✅ useEffect mein image URL process karo
+  useEffect(() => {
+    const processImageUrl = (url) => {
+      if (!url) return '';
+      
+      console.log('🖼️ Original image URL:', url);
+      
+      // ✅ Case 1: Agar relative URL hai (/uploads/filename.jpg)
+      if (url.startsWith('/uploads/')) {
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+        const fullUrl = `${backendUrl}${url}`;
+        console.log('✅ Converted to backend URL:', fullUrl);
+        return fullUrl;
+      }
+      
+      // ✅ Case 2: Agar wrong frontend URL hai
+      if (url.includes('localhost:3000/api/uploads')) {
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
+        const correctedUrl = url.replace('http://localhost:3000/api/uploads', '/uploads');
+        const fullUrl = `${backendUrl}${correctedUrl}`;
+        console.log('🔄 Fixed wrong URL:', fullUrl);
+        return fullUrl;
+      }
+      
+      // ✅ Case 3: Agar pehle se hi correct backend URL hai
+      if (url.includes('localhost:5000/uploads')) {
+        console.log('✅ Already correct backend URL');
+        return url;
+      }
+      
+      // ✅ Case 4: Koi aur format
+      console.log('⚠️ Unknown URL format:', url);
+      return url;
+    };
+
+    setImageUrl(processImageUrl(donation.imageUrl));
+  }, [donation.imageUrl]);
+
+  // Rest of the component...
   const getStatusColor = (status) => {
     switch (status) {
-      case 'available':
-        return 'bg-green-100 text-green-800';
-      case 'claimed':
-        return 'bg-orange-100 text-orange-800';
-      case 'picked':
-        return 'bg-purple-100 text-purple-800';
-      case 'expired':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'available': return 'bg-green-100 text-green-800';
+      case 'claimed': return 'bg-orange-100 text-orange-800';
+      case 'picked': return 'bg-purple-100 text-purple-800';
+      case 'expired': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'available':
-        return <Package className="h-4 w-4" />;
-      case 'claimed':
-        return <Clock className="h-4 w-4" />;
-      case 'picked':
-        return <CheckCircle className="h-4 w-4" />;
-      case 'expired':
-        return <AlertCircle className="h-4 w-4" />;
-      default:
-        return <Package className="h-4 w-4" />;
+      case 'available': return <Package className="h-4 w-4" />;
+      case 'claimed': return <Clock className="h-4 w-4" />;
+      case 'picked': return <CheckCircle className="h-4 w-4" />;
+      case 'expired': return <AlertCircle className="h-4 w-4" />;
+      default: return <Package className="h-4 w-4" />;
     }
   };
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
+  };
+
+  const handleImageError = () => {
+    console.error('❌ Image failed to load:', imageUrl);
+    setImageError(true);
+  };
+
+  const handleImageLoad = () => {
+    console.log('✅ Image loaded successfully:', imageUrl);
+    setImageLoaded(true);
   };
 
   const isExpired = new Date(donation.expiryTime) < new Date();
@@ -45,35 +86,58 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
 
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-      {/* Image */}
-      <div className="h-48 bg-gray-200 relative">
-        {donation.imageUrl ? (
-          <>
-            <img
-              src={donation.imageUrl}
-              alt={donation.title}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.nextSibling.style.display = 'flex';
-              }}
-            />
-            <div 
-              className="w-full h-full flex items-center justify-center text-gray-500 absolute inset-0"
-              style={{ display: 'none' }}
-            >
-              <Package className="h-12 w-12" />
+      {/* Image Section */}
+      {imageUrl && !imageError ? (
+        <div className="relative h-48 bg-gray-200 overflow-hidden">
+          <img
+            src={imageUrl}
+            alt={donation.title}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${
+              imageLoaded ? 'opacity-100' : 'opacity-0'
+            }`}
+            onError={handleImageError}
+            onLoad={handleImageLoad}
+            loading="lazy"
+          />
+          
+          {!imageLoaded && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
             </div>
-          </>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-500">
-            <Package className="h-12 w-12" />
-          </div>
-        )}
-      </div>
+          )}
 
+          {imageLoaded && (
+            <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+              📸
+            </div>
+          )}
+
+          <div className={`absolute top-2 left-2 flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(donation.status)}`}>
+            {getStatusIcon(donation.status)}
+            <span className="capitalize">{donation.status}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="h-48 bg-gray-200 flex flex-col items-center justify-center text-gray-500 p-4">
+          <Camera className="h-12 w-12 mb-2 opacity-50" />
+          <p className="text-sm text-center">
+            {imageError ? 'Photo not available' : 'No photo available'}
+          </p>
+          {imageUrl && imageError && (
+            <p className="text-xs text-center mt-1 text-red-500">
+              Failed to load image
+            </p>
+          )}
+          
+          <div className={`absolute top-2 left-2 flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(donation.status)}`}>
+            {getStatusIcon(donation.status)}
+            <span className="capitalize">{donation.status}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Rest of the component */}
       <div className="p-6">
-        {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">
@@ -83,15 +147,8 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
               {donation.description}
             </p>
           </div>
-          
-          {/* Status Badge */}
-          <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(donation.status)}`}>
-            {getStatusIcon(donation.status)}
-            <span className="capitalize">{donation.status}</span>
-          </div>
         </div>
 
-        {/* Details */}
         <div className="space-y-2 mb-4">
           <div className="flex items-center text-sm text-gray-600">
             <Package className="h-4 w-4 mr-2" />
@@ -100,7 +157,7 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
           
           <div className="flex items-center text-sm text-gray-600">
             <MapPin className="h-4 w-4 mr-2" />
-            <span className="truncate">{donation.location.address}</span>
+            <span className="truncate">{donation.location?.address || 'Address not specified'}</span>
           </div>
           
           <div className="flex items-center text-sm text-gray-600">
@@ -109,7 +166,6 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
           </div>
         </div>
 
-        {/* Time until expiry */}
         {donation.status === 'available' && (
           <div className="mb-4">
             <div className={`text-sm font-medium ${
@@ -120,40 +176,6 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
           </div>
         )}
 
-        {/* Claimed by info */}
-        {donation.status === 'claimed' && donation.claimedByName && (
-          <div className="mb-4 p-3 bg-orange-50 rounded-lg">
-            <p className="text-sm text-orange-800">
-              <strong>Claimed by:</strong> {donation.claimedByName}
-            </p>
-            <p className="text-xs text-orange-600 mt-1">
-              Pickup window: {formatDate(donation.pickupWindow.start)} - {formatDate(donation.pickupWindow.end)}
-            </p>
-            <div className="mt-3">
-              <button
-                onClick={() => onViewRoute(donation)}
-                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-              >
-                <Navigation className="h-4 w-4" />
-                <span>Get Directions to Pickup</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Pickup window */}
-        {donation.status === 'available' && (
-          <div className="mb-4 p-3 bg-green-50 rounded-lg">
-            <p className="text-sm text-green-800">
-              <strong>Pickup available:</strong>
-            </p>
-            <p className="text-xs text-green-600 mt-1">
-              {formatDate(donation.pickupWindow.start)} - {formatDate(donation.pickupWindow.end)}
-            </p>
-          </div>
-        )}
-
-        {/* Actions */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-200">
           <div className="text-xs text-gray-500">
             Posted {formatDate(donation.createdAt)}
@@ -162,14 +184,10 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
           <div className="flex space-x-2">
             <button
               onClick={() => onViewRoute(donation)}
-              className={`flex items-center space-x-1 px-3 py-1 text-sm rounded-md transition-colors ${
-                donation.status === 'claimed' 
-                  ? 'text-white bg-blue-600 hover:bg-blue-700' 
-                  : 'text-blue-600 bg-blue-50 hover:bg-blue-100'
-              }`}
+              className="flex items-center space-x-1 px-3 py-1 text-sm text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
             >
               <Navigation className="h-4 w-4" />
-              <span>{donation.status === 'claimed' ? 'Get Directions' : 'Directions'}</span>
+              <span>Directions</span>
             </button>
             
             {donation.status === 'available' && (
@@ -182,6 +200,22 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
             )}
           </div>
         </div>
+
+        {/* Debug info */}
+        {process.env.NODE_ENV === 'development' && donation.imageUrl && (
+          <div>
+            {/* <p><strong>Debug Image Info:</strong></p>
+            <p><strong>DB URL:</strong> {donation.imageUrl}</p>
+            <p><strong>Processed:</strong> {imageUrl}</p>
+            <p><strong>Status:</strong> {imageLoaded ? '✅ Loaded' : imageError ? '❌ Error' : '⏳ Loading'}</p>
+            <button 
+              onClick={() => window.open(imageUrl, '_blank')}
+              className="mt-1 text-blue-600 underline text-xs"
+            >
+              Test URL in new tab
+            </button> */}
+          </div>
+        )}
       </div>
     </div>
   );
