@@ -6,7 +6,7 @@ export const donationController = {
   // Get all donations
   async getAllDonations(req, res) {
     try {
-      const { limit = 50, status, donorId, claimedBy } = req.query;
+      const { limit = 50, status, donorId, claimedBy, ngoLocation } = req.query;
       
       let donations;
       
@@ -16,6 +16,9 @@ export const donationController = {
         donations = await FoodDonation.findByDonor(donorId, parseInt(limit));
       } else if (claimedBy) {
         donations = await FoodDonation.findByClaimedBy(claimedBy, parseInt(limit));
+      } else if (ngoLocation && req.user && req.user.role === 'ngo') {
+        // For NGOs, filter donations by location with progressive radius
+        donations = await this.getDonationsForNGO(req.user._id, ngoLocation, parseInt(limit));
       } else {
         donations = await FoodDonation.findAvailable(parseInt(limit));
       }
@@ -336,6 +339,78 @@ async createDonation(req, res) {
     } catch (error) {
       console.error('Get donation stats error:', error);
       res.status(500).json({ error: 'Failed to get donation statistics' });
+    }
+  },
+
+  // Get donations for NGO based on location with progressive radius expansion
+  async getDonationsForNGO(ngoId, ngoLocation, limit = 50) {
+    try {
+      // Parse NGO location
+      const { lat, lng } = ngoLocation;
+      if (!lat || !lng) {
+        console.log('NGO location not provided, returning all available donations');
+        return await FoodDonation.findAvailable(limit);
+      }
+
+      // Start with 5km radius and progressively increase
+      let radiusKm = 5;
+      let maxRadiusKm = 50; // Maximum radius to search
+      let donations = [];
+
+      while (radiusKm <= maxRadiusKm && donations.length === 0) {
+        console.log(`Searching for donations within ${radiusKm}km radius`);
+        
+        // Get all available donations
+        const allDonations = await FoodDonation.findAvailable(1000); // Get more to filter
+        
+        // Filter donations by distance
+        donations = allDonations.filter(donation => {
+          if (!donation.location.coordinates || 
+              !donation.location.coordinates.lat || 
+              !donation.location.coordinates.lng) {
+            return false; // Skip donations without coordinates
+          }
+          
+          const distance = calculateDistance(
+            parseFloat(lat),
+            parseFloat(lng),
+            donation.location.coordinates.lat,
+            donation.location.coordinates.lng
+          );
+          
+          return distance <= radiusKm;
+        });
+
+        if (donations.length > 0) {
+          console.log(`Found ${donations.length} donations within ${radiusKm}km radius`);
+          break;
+        }
+
+        radiusKm += 5; // Increase radius by 5km
+      }
+
+      // Sort by distance and limit results
+      donations.sort((a, b) => {
+        const distanceA = calculateDistance(
+          parseFloat(lat),
+          parseFloat(lng),
+          a.location.coordinates.lat,
+          a.location.coordinates.lng
+        );
+        const distanceB = calculateDistance(
+          parseFloat(lat),
+          parseFloat(lng),
+          b.location.coordinates.lat,
+          b.location.coordinates.lng
+        );
+        return distanceA - distanceB;
+      });
+
+      return donations.slice(0, limit);
+    } catch (error) {
+      console.error('Error getting donations for NGO:', error);
+      // Fallback to all available donations
+      return await FoodDonation.findAvailable(limit);
     }
   }
 };

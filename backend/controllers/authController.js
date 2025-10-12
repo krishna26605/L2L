@@ -170,11 +170,12 @@ export const authController = {
   // Update user profile
   async updateProfile(req, res) {
     try {
-      const { displayName, photoURL } = req.body;
+      const { displayName, photoURL, location } = req.body;
       
       const updateData = {};
       if (displayName) updateData.displayName = displayName;
       if (photoURL !== undefined) updateData.photoURL = photoURL;
+      if (location) updateData.location = location;
 
       const updatedUser = await User.findByIdAndUpdate(
         req.user._id,

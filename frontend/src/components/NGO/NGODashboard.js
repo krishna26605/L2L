@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Map, List, Navigation, Heart, Package, TrendingUp, Route } from 'lucide-react';
+import { Map, List, Navigation, Heart, Package, TrendingUp, Route, MapPin } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { donationsAPI } from '../../lib/api';
 import { Navbar } from '../Layout/Navbar';
@@ -10,7 +10,7 @@ import { RouteTracker } from './RouteTracker';
 import toast from 'react-hot-toast';
 
 export const NGODashboard = () => {
-  const { user } = useAuth();
+  const { user, updateUserProfile } = useAuth();
   const [donations, setDonations] = useState([]);
   const [filteredDonations, setFilteredDonations] = useState([]);
   const [selectedDonation, setSelectedDonation] = useState(null);
@@ -22,6 +22,8 @@ export const NGODashboard = () => {
   const [showRouteTracker, setShowRouteTracker] = useState(false);
   const [selectedRouteData, setSelectedRouteData] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [showLocationSetup, setShowLocationSetup] = useState(false);
+  const [ngoLocation, setNgoLocation] = useState(null);
   const prevDonationsRef = useRef([]);
 
   useEffect(() => {
@@ -31,6 +33,11 @@ export const NGODashboard = () => {
   useEffect(() => {
     if (!user) return;
     fetchMyDonations();
+    
+    // Check if NGO has location set
+    if (user.role === 'ngo' && (!user.location || !user.location.coordinates)) {
+      setShowLocationSetup(true);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -57,7 +64,18 @@ export const NGODashboard = () => {
   const fetchDonations = async () => {
     try {
       setLoading(true);
-      const response = await donationsAPI.getAll();
+      
+      // For NGOs, try to get their location and pass it to the API
+      let params = {};
+      if (user && user.role === 'ngo' && user.location && user.location.coordinates) {
+        params.ngoLocation = {
+          lat: user.location.coordinates.lat,
+          lng: user.location.coordinates.lng
+        };
+        console.log('📍 Fetching donations for NGO with location:', params.ngoLocation);
+      }
+      
+      const response = await donationsAPI.getAll(params);
       const donationsData = response.data.donations;
 
       // Detect new donations
@@ -199,6 +217,47 @@ export const NGODashboard = () => {
     fetchMyDonations();
   };
 
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const location = {
+            coordinates: {
+              lat: latitude,
+              lng: longitude
+            }
+          };
+          
+          try {
+            // Update user profile with location
+            await updateUserProfile({ location });
+            setNgoLocation(location);
+            setShowLocationSetup(false);
+            toast.success('Location set successfully!');
+            
+            // Refresh donations with new location
+            fetchDonations();
+          } catch (error) {
+            console.error('Error saving location:', error);
+            toast.error('Failed to save location');
+          }
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          toast.error('Unable to get your location. Please allow location access.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000
+        }
+      );
+    } else {
+      toast.error('Geolocation is not supported by this browser.');
+    }
+  };
+
   const stats = {
     available: donations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date()).length,
     claimed: myDonations.filter(d => d.status === 'claimed').length,
@@ -311,18 +370,36 @@ export const NGODashboard = () => {
                 <span className="bg-blue-500 text-xs px-2 py-1 rounded-full">{stats.available}</span>
               )}
             </button>
+            {user && user.role === 'ngo' && user.location && user.location.coordinates && (
+              <button
+                onClick={() => setShowLocationSetup(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+              >
+                <MapPin className="h-4 w-4" />
+                <span>Update Location</span>
+              </button>
+            )}
           </div>
 
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
-          >
-            <option value="all">All Available</option>
-            <option value="available">Available Now</option>
-            <option value="claimed">Claimed</option>
-            <option value="mine">My Donations</option>
-          </select>
+          <div className="flex items-center space-x-4">
+            {user && user.role === 'ngo' && user.location && user.location.coordinates && (
+              <div className="text-sm text-gray-600 bg-green-50 px-3 py-2 rounded-lg">
+                <span className="font-medium">📍 Location-based filtering active</span>
+                <br />
+                <span className="text-xs">Showing donations within 5km radius (expanding if needed)</span>
+              </div>
+            )}
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+            >
+              <option value="all">All Available</option>
+              <option value="available">Available Now</option>
+              <option value="claimed">Claimed</option>
+              <option value="mine">My Donations</option>
+            </select>
+          </div>
         </div>
 
         {/* Content */}
@@ -399,6 +476,35 @@ export const NGODashboard = () => {
           onComplete={handleRouteComplete}
           onClose={() => setShowRouteTracker(false)}
         />
+      )}
+
+      {/* Location Setup Modal */}
+      {showLocationSetup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Set Your NGO Location
+            </h3>
+            <p className="text-gray-600 mb-6">
+              To see nearby food donations, we need to know your NGO's location. 
+              This will help us show you donations within a 5km radius (expanding if needed).
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={getCurrentLocation}
+                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Use Current Location
+              </button>
+              <button
+                onClick={() => setShowLocationSetup(false)}
+                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Skip for Now
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

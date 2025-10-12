@@ -1,6 +1,23 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+const locationSchema = new mongoose.Schema({
+  address: {
+    type: String,
+    required: false
+  },
+  coordinates: {
+    lat: {
+      type: Number,
+      required: false
+    },
+    lng: {
+      type: Number,
+      required: false
+    }
+  }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -29,6 +46,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  location: {
+    type: locationSchema,
+    required: false
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -40,6 +61,7 @@ const userSchema = new mongoose.Schema({
 // Index for faster queries
 userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
+userSchema.index({ 'location.coordinates': '2dsphere' });
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
@@ -77,6 +99,23 @@ userSchema.statics.findByRole = function(role, limit = 50) {
 
 userSchema.statics.findAll = function(limit = 50) {
   return this.find({}).limit(limit).sort({ createdAt: -1 });
+};
+
+userSchema.statics.findNGOsByLocation = function(lat, lng, radiusKm = 5) {
+  return this.find({
+    role: 'ngo',
+    'location.coordinates.lat': { $exists: true },
+    'location.coordinates.lng': { $exists: true },
+    'location.coordinates': {
+      $near: {
+        $geometry: {
+          type: 'Point',
+          coordinates: [lng, lat]
+        },
+        $maxDistance: radiusKm * 1000 // Convert km to meters
+      }
+    }
+  });
 };
 
 const User = mongoose.model('User', userSchema);

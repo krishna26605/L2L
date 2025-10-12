@@ -46,24 +46,30 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
       {/* Image */}
-      <div className="h-48 bg-gray-200">
+      <div className="h-48 bg-gray-200 relative">
         {donation.imageUrl ? (
-          <img
-            src={donation.imageUrl}
-            alt={donation.title}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.nextSibling.style.display = 'flex';
-            }}
-          />
-        ) : null}
-        <div 
-          className="w-full h-full flex items-center justify-center text-gray-500"
-          style={{ display: donation.imageUrl ? 'none' : 'flex' }}
-        >
-          <Package className="h-12 w-12" />
-        </div>
+          <>
+            <img
+              src={donation.imageUrl}
+              alt={donation.title}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.style.display = 'none';
+                e.target.nextSibling.style.display = 'flex';
+              }}
+            />
+            <div 
+              className="w-full h-full flex items-center justify-center text-gray-500 absolute inset-0"
+              style={{ display: 'none' }}
+            >
+              <Package className="h-12 w-12" />
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-gray-500">
+            <Package className="h-12 w-12" />
+          </div>
+        )}
       </div>
 
       <div className="p-6">
