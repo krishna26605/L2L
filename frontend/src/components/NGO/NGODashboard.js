@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Map, List, Navigation, Heart, Package, TrendingUp, Route, MapPin, Settings } from 'lucide-react';
+import { Map, List, Navigation, Heart, Package, TrendingUp, Route, MapPin, Settings, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { donationsAPI } from '../../lib/api';
 import { Navbar } from '../Layout/Navbar';
@@ -92,8 +92,8 @@ const RadiusUpdateModal = ({ isOpen, onClose, currentRadius, onUpdate }) => {
 
 export const NGODashboard = () => {
   const { user, updateUserProfile } = useAuth();
-  const [donations, setDonations] = useState([]);
-  const [filteredDonations, setFilteredDonations] = useState([]);
+  const [allDonations, setAllDonations] = useState([]); // All donations from API
+  const [filteredDonations, setFilteredDonations] = useState([]); // Donations after filtering
   const [selectedDonation, setSelectedDonation] = useState(null);
   const [viewMode, setViewMode] = useState('map');
   const [filter, setFilter] = useState('all');
@@ -107,144 +107,294 @@ export const NGODashboard = () => {
   const [showRadiusUpdate, setShowRadiusUpdate] = useState(false);
   const [usingLocationFiltering, setUsingLocationFiltering] = useState(false);
   const [currentRadius, setCurrentRadius] = useState(20);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshIntervalRef = useRef(null);
   const prevDonationsRef = useRef([]);
+
+  // Distance calculation function (Haversine formula)
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Real-time refresh setup
+  useEffect(() => {
+    if (user && autoRefresh) {
+      refreshIntervalRef.current = setInterval(() => {
+        console.log('🔄 Auto-refreshing donations...');
+        fetchAllDonations(false); // Silent refresh
+      }, 30000);
+
+      return () => {
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+        }
+      };
+    }
+  }, [user, autoRefresh]);
 
   useEffect(() => {
     if (user) {
       setCurrentRadius(user?.ngoDetails?.operationalRadius || 20);
-      fetchDonations();
+      fetchAllDonations();
+      fetchMyDonations();
     }
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    fetchMyDonations();
+    if (user?.role === 'ngo') {
+      if (!user.location || !user.location.coordinates) {
+        setShowLocationSetup(true);
+        setUsingLocationFiltering(false);
+      } else {
+        setUsingLocationFiltering(true);
+      }
+    }
+  }, [user]);
+
+  // ✅ UPDATED: Apply all filtering logic whenever dependencies change
+  useEffect(() => {
+    applyFilters();
+  }, [allDonations, myDonations, filter, user, currentRadius]);
+
+  // ✅ NEW: Main filtering function that handles everything
+  const applyFilters = () => {
+    console.log('🎯 Applying filters...');
     
-    // Check if NGO has location set
-    if (user.role === 'ngo' && (!user.location || !user.location.coordinates)) {
-      setShowLocationSetup(true);
-      setUsingLocationFiltering(false);
-    } else if (user.role === 'ngo' && user.location && user.location.coordinates) {
-      setUsingLocationFiltering(true);
+    let filtered = [...allDonations];
+
+    // Step 1: Filter by status and expiry
+    filtered = filtered.filter(donation => {
+      const isAvailable = donation.status === 'available';
+      const isNotExpired = new Date(donation.expiryTime) > new Date();
+      return isAvailable && isNotExpired;
+    });
+
+    console.log('📊 After status/expiry filter:', filtered.length);
+
+    // Step 2: Apply location-based filtering if NGO has location
+    if (user?.role === 'ngo' && user?.location?.coordinates && usingLocationFiltering) {
+      const ngoLat = user.location.coordinates.lat;
+      const ngoLng = user.location.coordinates.lng;
+      
+      console.log(`📍 NGO location: ${ngoLat}, ${ngoLng} (${currentRadius}km radius)`);
+      
+      filtered = filtered.filter(donation => {
+        if (!donation.location?.coordinates) {
+          console.log('❌ Donation missing coordinates:', donation.title);
+          return false;
+        }
+        
+        const distance = calculateDistance(
+          ngoLat,
+          ngoLng,
+          donation.location.coordinates.lat,
+          donation.location.coordinates.lng
+        );
+        
+        const isWithinRadius = distance <= currentRadius;
+        
+        if (isWithinRadius) {
+          console.log(`✅ "${donation.title}" - ${distance.toFixed(2)}km away`);
+        } else {
+          console.log(`❌ "${donation.title}" - ${distance.toFixed(2)}km away (outside radius)`);
+        }
+        
+        return isWithinRadius;
+      });
+      
+      console.log('📍 After location filter:', filtered.length);
     }
-  }, [user]);
 
-  useEffect(() => {
-    let filtered = donations;
-
+    // Step 3: Apply view filter
     switch (filter) {
       case 'available':
-        filtered = donations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date());
+        // Already filtered above
         break;
       case 'claimed':
-        filtered = donations.filter(d => d.status === 'claimed');
+        filtered = myDonations.filter(d => d.status === 'claimed');
         break;
       case 'mine':
         filtered = myDonations;
         break;
       default:
-        // Show all donations that are not expired
-        filtered = donations.filter(d => new Date(d.expiryTime) > new Date());
+        // 'all' - use the already filtered available donations
+        break;
     }
 
+    console.log('🎯 Final filtered donations:', filtered.length);
     setFilteredDonations(filtered);
-  }, [donations, myDonations, filter]);
 
-  // Fetch donations with location-based filtering
-  const fetchDonations = async () => {
+    // Detect new donations for notifications
+    const prevDonations = prevDonationsRef.current;
+    const newDonations = filtered.filter(d => 
+      !prevDonations.some(pd => pd._id === d._id)
+    );
+
+    if (newDonations.length > 0) {
+      const notificationMessage = `🎉 ${newDonations.length} new donation${newDonations.length > 1 ? 's' : ''} available nearby!`;
+      setNotification(notificationMessage);
+      toast.success(notificationMessage, { duration: 5000 });
+      setTimeout(() => setNotification(null), 5000);
+    }
+
+    prevDonationsRef.current = filtered;
+  };
+
+  // ✅ UPDATED: Fetch ALL donations (not just available)
+  const fetchAllDonations = async (showLoading = true) => {
     try {
-      setLoading(true);
-      
-      console.log('🏢 NGO Dashboard - Fetching donations...');
-      console.log('👤 Current User:', {
-        role: user?.role,
-        hasLocation: !!(user?.location),
-        coordinates: user?.location?.coordinates,
-        operationalRadius: user?.ngoDetails?.operationalRadius || 20
-      });
-      
-      let response;
-      let isLocationFiltered = false;
-      
-      if (user && user.role === 'ngo' && user.location && user.location.coordinates) {
-        try {
-          console.log('📍 Attempting to use NGO-specific endpoint...');
-          response = await donationsAPI.getForMyNGO({ limit: 50 });
-          isLocationFiltered = true;
-          console.log('✅ NGO endpoint response:', {
-            donationsCount: response.data.donations?.length,
-            metadata: response.data.metadata
-          });
-        } catch (endpointError) {
-          console.warn('⚠️ NGO endpoint failed, falling back to general endpoint:', endpointError);
-          response = await donationsAPI.getAll();
-          isLocationFiltered = false;
-        }
+      if (showLoading) {
+        setLoading(true);
       } else {
-        // Fallback to general endpoint
-        console.log('⚠️ NGO without location, using general endpoint');
-        response = await donationsAPI.getAll();
-        isLocationFiltered = false;
-      }
-      
-      const donationsData = response.data.donations || [];
-      setUsingLocationFiltering(isLocationFiltered);
-      setDonations(donationsData);
-      
-      console.log('📊 Final donations data:', donationsData.length);
-
-      // Detect new donations
-      const prevDonations = prevDonationsRef.current;
-      const newDonations = donationsData.filter(d => !prevDonations.some(pd => pd._id === d._id));
-
-      if (newDonations.length > 0) {
-        setNotification(`New donation${newDonations.length > 1 ? 's' : ''} added!`);
-        setTimeout(() => setNotification(null), 5000);
+        setRefreshing(true);
       }
 
-      prevDonationsRef.current = donationsData;
+      console.log('🏢 NGO Dashboard - Fetching ALL donations...');
+      
+      // Fetch all donations without filters
+      const response = await donationsAPI.getAll();
+      
+      console.log('🔍 Full API Response:', response);
+      
+      // 🛠️ FIX: Handle different response formats
+      let donationsData = [];
+      
+      if (response.data && Array.isArray(response.data)) {
+        // Case 1: Response data is directly an array
+        donationsData = response.data;
+        console.log('📦 Response is direct array:', donationsData.length);
+      } else if (response.data && response.data.donations && Array.isArray(response.data.donations)) {
+        // Case 2: Response has donations property
+        donationsData = response.data.donations;
+        console.log('📦 Response has donations property:', donationsData.length);
+      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        // Case 3: Response has data property
+        donationsData = response.data.data;
+        console.log('📦 Response has data property:', donationsData.length);
+      } else {
+        // Case 4: Try to find any array in response
+        console.warn('⚠️ Unknown response format, searching for array...');
+        for (let key in response.data) {
+          if (Array.isArray(response.data[key])) {
+            donationsData = response.data[key];
+            console.log(`🔄 Found array in key "${key}":`, donationsData.length);
+            break;
+          }
+        }
+      }
+      
+      console.log('📊 All donations from backend:', donationsData.length);
+      
+      // Debug first few donations
+      if (donationsData.length > 0) {
+        console.log('🔍 Sample donations:');
+        donationsData.slice(0, 3).forEach((donation, index) => {
+          console.log(`  ${index + 1}. "${donation.title}" - Status: ${donation.status}`, {
+            coordinates: donation.location?.coordinates,
+            expiryTime: donation.expiryTime,
+            isExpired: new Date(donation.expiryTime) < new Date()
+          });
+        });
+      }
+      
+      setAllDonations(donationsData);
+
     } catch (error) {
       console.error('❌ Error fetching donations:', error);
       toast.error('Failed to load donations');
+      setAllDonations([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Debug function to check all donations
-  const checkAllDonations = async () => {
-    try {
-      console.log('🔍 Checking all available donations in system...');
-      const response = await donationsAPI.getAll();
-      const allDonations = response.data.donations || [];
-      
-      console.log('📋 All donations in system:', allDonations.length);
-      allDonations.forEach(donation => {
-        console.log(`📍 Donation: ${donation.title}`, {
-          status: donation.status,
-          location: donation.location,
-          expiryTime: donation.expiryTime,
-          isExpired: new Date(donation.expiryTime) < new Date()
-        });
-      });
-      
-      // Check if any are available and not expired
-      const availableDonations = allDonations.filter(d => 
-        d.status === 'available' && new Date(d.expiryTime) > new Date()
-      );
-      console.log('✅ Available & not expired donations:', availableDonations.length);
-      
-    } catch (error) {
-      console.error('Error checking all donations:', error);
-    }
-  };
-
+  // Fetch NGO's claimed donations
   const fetchMyDonations = async () => {
     try {
-      const response = await donationsAPI.getAll({ claimedBy: user._id });
-      setMyDonations(response.data.donations);
+      const response = await donationsAPI.getAll({ 
+        claimedBy: user?._id 
+      });
+      
+      let myDonationsData = [];
+      
+      // Handle different response formats
+      if (response.data && Array.isArray(response.data)) {
+        myDonationsData = response.data;
+      } else if (response.data && response.data.donations && Array.isArray(response.data.donations)) {
+        myDonationsData = response.data.donations;
+      } else if (response.data && response.data.data && Array.isArray(response.data.data)) {
+        myDonationsData = response.data.data;
+      }
+      
+      setMyDonations(myDonationsData || []);
+      console.log('📦 My claimed donations:', myDonationsData.length);
+      
     } catch (error) {
       console.error('Error fetching my donations:', error);
+      setMyDonations([]);
+    }
+  };
+
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    setRefreshing(true);
+    await fetchAllDonations(false);
+    await fetchMyDonations();
+    setRefreshing(false);
+    toast.success('Donations list updated!');
+  };
+
+  // Debug function
+  const debugCurrentState = () => {
+    console.log('🔍 DEBUG CURRENT STATE:', {
+      user: {
+        role: user?.role,
+        location: user?.location,
+        coordinates: user?.location?.coordinates,
+        operationalRadius: user?.ngoDetails?.operationalRadius
+      },
+      donations: {
+        all: allDonations,
+        allCount: allDonations.length,
+        filtered: filteredDonations,
+        filteredCount: filteredDonations.length
+      },
+      myDonations: {
+        all: myDonations,
+        count: myDonations.length
+      },
+      usingLocationFiltering,
+      currentRadius,
+      filter
+    });
+
+    // Calculate distances for first few donations
+    if (user?.location?.coordinates && allDonations.length > 0) {
+      const ngoLat = user.location.coordinates.lat;
+      const ngoLng = user.location.coordinates.lng;
+      
+      console.log('📍 DISTANCE CALCULATIONS:');
+      allDonations.slice(0, 5).forEach((donation, index) => {
+        if (donation.location?.coordinates) {
+          const distance = calculateDistance(
+            ngoLat,
+            ngoLng,
+            donation.location.coordinates.lat,
+            donation.location.coordinates.lng
+          );
+          console.log(`  ${index + 1}. "${donation.title}" - ${distance.toFixed(2)}km - Status: ${donation.status}`);
+        }
+      });
     }
   };
 
@@ -255,19 +405,18 @@ export const NGODashboard = () => {
       const response = await donationsAPI.claim(donation._id);
       toast.success('Donation claimed successfully!');
       
-      // Show distance info if available
-      if (response.data.distance) {
+      if (response.data?.distance) {
         toast.success(`Donation is ${response.data.distance}km away`);
       }
       
-      // Show directions option after claiming
       setTimeout(() => {
         if (confirm('Would you like to get directions to the pickup location?')) {
           handleViewRoute(donation);
         }
       }, 1000);
       
-      fetchDonations();
+      // Refresh data after claiming
+      fetchAllDonations(false);
       fetchMyDonations();
     } catch (error) {
       console.error('Error claiming donation:', error);
@@ -284,11 +433,9 @@ export const NGODashboard = () => {
 
     const openDirections = (userLat, userLng) => {
       if (donation.location.coordinates?.lat && donation.location.coordinates?.lng) {
-        // Use coordinates for precise navigation
         const url = `https://www.google.com/maps/dir/${userLat},${userLng}/${donation.location.coordinates.lat},${donation.location.coordinates.lng}`;
         window.open(url, '_blank');
       } else {
-        // Fallback to address-based navigation
         const url = `https://www.google.com/maps/dir/${userLat},${userLng}/${encodeURIComponent(donation.location.address)}`;
         window.open(url, '_blank');
       }
@@ -302,26 +449,8 @@ export const NGODashboard = () => {
         }, 
         (error) => {
           console.error('Error getting current location:', error);
-          let errorMessage = 'Unable to get your current location. ';
+          toast.error('Unable to get your current location. Opening donation location...');
           
-          switch(error.code) {
-            case error.PERMISSION_DENIED:
-              errorMessage += 'Please allow location access or use the address below.';
-              break;
-            case error.POSITION_UNAVAILABLE:
-              errorMessage += 'Location information is unavailable.';
-              break;
-            case error.TIMEOUT:
-              errorMessage += 'Location request timed out.';
-              break;
-            default:
-              errorMessage += 'An unknown error occurred.';
-              break;
-          }
-          
-          toast.error(errorMessage);
-          
-          // Fallback: open destination directly
           const fallbackUrl = donation.location.coordinates?.lat && donation.location.coordinates?.lng 
             ? `https://www.google.com/maps/search/${donation.location.coordinates.lat},${donation.location.coordinates.lng}`
             : `https://www.google.com/maps/search/${encodeURIComponent(donation.location.address)}`;
@@ -334,7 +463,6 @@ export const NGODashboard = () => {
         }
       );
     } else {
-      // Fallback for browsers without geolocation
       const fallbackUrl = donation.location.coordinates?.lat && donation.location.coordinates?.lng 
         ? `https://www.google.com/maps/search/${donation.location.coordinates.lat},${donation.location.coordinates.lng}`
         : `https://www.google.com/maps/search/${encodeURIComponent(donation.location.address)}`;
@@ -343,11 +471,13 @@ export const NGODashboard = () => {
   };
 
   const handleStartMultiPickup = () => {
-    const availableDonations = donations.filter(d => 
+    const availableDonations = filteredDonations.filter(d => 
       d.status === 'available' && new Date(d.expiryTime) > new Date()
     );
     if (availableDonations.length > 0) {
       setShowMultiSelector(true);
+    } else {
+      toast.error('No available donations for multi-pickup');
     }
   };
 
@@ -360,7 +490,7 @@ export const NGODashboard = () => {
   const handleRouteComplete = () => {
     setShowRouteTracker(false);
     setSelectedRouteData([]);
-    fetchDonations();
+    fetchAllDonations(false);
     fetchMyDonations();
   };
 
@@ -380,14 +510,11 @@ export const NGODashboard = () => {
           console.log('📍 Setting NGO location:', location);
           
           try {
-            // Update user profile with location
             await updateUserProfile({ location });
             setShowLocationSetup(false);
             setUsingLocationFiltering(true);
             toast.success('Location set successfully! Refreshing nearby donations...');
-            
-            // Refresh donations with new location
-            fetchDonations();
+            fetchAllDonations();
           } catch (error) {
             console.error('❌ Error saving location:', error);
             toast.error('Failed to save location');
@@ -396,11 +523,6 @@ export const NGODashboard = () => {
         (error) => {
           console.error('❌ Error getting location:', error);
           toast.error('Unable to get your location. Please allow location access.');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000
         }
       );
     } else {
@@ -410,14 +532,20 @@ export const NGODashboard = () => {
 
   const handleRadiusUpdate = (newRadius) => {
     setCurrentRadius(newRadius);
-    fetchDonations(); // Refresh with new radius
+    // No need to refetch - filtering happens automatically via useEffect
   };
 
+  const toggleAutoRefresh = () => {
+    setAutoRefresh(!autoRefresh);
+    toast.info(!autoRefresh ? 'Auto-refresh enabled (30s)' : 'Auto-refresh disabled');
+  };
+
+  // Stats calculation
   const stats = {
-    available: donations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date()).length,
-    claimed: myDonations.filter(d => d.status === 'claimed').length,
-    completed: myDonations.filter(d => d.status === 'picked').length,
-    total: myDonations.length,
+    available: filteredDonations.length,
+    claimed: (myDonations || []).filter(d => d.status === 'claimed').length,
+    completed: (myDonations || []).filter(d => d.status === 'picked').length,
+    total: (myDonations || []).length,
   };
 
   if (loading) {
@@ -436,15 +564,17 @@ export const NGODashboard = () => {
       <Navbar title="NGO Dashboard" />
 
       {notification && (
-        <div className="fixed top-16 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
-          {notification}
-          <button
-            onClick={() => setNotification(null)}
-            className="ml-4 font-bold"
-            aria-label="Dismiss notification"
-          >
-            ×
-          </button>
+        <div className="fixed top-16 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50 animate-pulse">
+          <div className="flex items-center">
+            <Package className="h-4 w-4 mr-2" />
+            {notification}
+            <button
+              onClick={() => setNotification(null)}
+              className="ml-4 font-bold hover:text-gray-200"
+            >
+              ×
+            </button>
+          </div>
         </div>
       )}
 
@@ -549,9 +679,39 @@ export const NGODashboard = () => {
                 <span>Radius ({currentRadius}km)</span>
               </button>
             )}
+            {/* Debug Button */}
+            <button
+              onClick={debugCurrentState}
+              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
+            >
+              <span>Debug State</span>
+            </button>
           </div>
 
           <div className="flex items-center space-x-4">
+            {/* Auto-refresh toggle */}
+            <button
+              onClick={toggleAutoRefresh}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                autoRefresh 
+                  ? 'bg-green-100 text-green-700 border border-green-300' 
+                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+              }`}
+            >
+              <RefreshCw className={`h-4 w-4 ${autoRefresh ? 'animate-spin' : ''}`} />
+              <span className="text-sm">Auto</span>
+            </button>
+
+            {/* Manual refresh */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="flex items-center space-x-2 px-3 py-2 bg-white text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <span className="text-sm">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+            </button>
+
             {usingLocationFiltering && (
               <div className="text-sm text-gray-600 bg-green-50 px-3 py-2 rounded-lg">
                 <span className="font-medium">📍 Location-based filtering active</span>
@@ -641,12 +801,6 @@ export const NGODashboard = () => {
                         Set Location to See Nearby Donations
                       </button>
                     )}
-                    <button
-                      onClick={checkAllDonations}
-                      className="ml-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                    >
-                      Debug: Check All Donations
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -669,7 +823,7 @@ export const NGODashboard = () => {
       {/* Multi Location Selector Modal */}
       {showMultiSelector && (
         <MultiLocationSelector
-          donations={donations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date())}
+          donations={filteredDonations.filter(d => d.status === 'available' && new Date(d.expiryTime) > new Date())}
           onStartRoute={handleStartRoute}
           onClose={() => setShowMultiSelector(false)}
         />

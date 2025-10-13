@@ -35,77 +35,96 @@ export const LoginForm = ({ onSwitchToSignup }) => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    return;
+  }
+
+  setLoading(true);
+  setErrors({});
+
+  try {
+    console.log('🔄 LoginForm: Attempting login for:', email);
+    console.log('📝 LoginForm: Calling signIn function...');
     
-    if (!validateForm()) {
-      return;
+    const response = await signIn(email, password);
+    
+    console.log('✅ LoginForm: signIn response received:', response);
+    
+    if (!response) {
+      throw new Error('No response from signIn function');
     }
-
-    setLoading(true);
-    setErrors({});
-
-    try {
-      console.log('🔄 LoginForm: Attempting login for:', email);
-      
-      const response = await signIn(email, password);
-      
-      console.log('✅ LoginForm: Login successful!', response);
-      
-      // Verify cookies were set
-      const tokenAfterLogin = Cookies.get('auth_token');
-      const userAfterLogin = Cookies.get('user');
-      
-      console.log('🍪 Token after login:', tokenAfterLogin ? 'PRESENT' : 'MISSING');
-      console.log('🍪 User after login:', userAfterLogin ? 'PRESENT' : 'MISSING');
-      
-      if (!tokenAfterLogin) {
-        throw new Error('Authentication token not set after login');
-      }
-      
-      toast.success('Welcome back!');
-      
-      // Use the redirectTo from backend response or determine based on user role
-      let redirectPath = '/donor-dashboard'; // fallback
-      
-      if (response?.redirectTo) {
-        // Use backend-provided redirect path
-        redirectPath = response.redirectTo;
-        console.log('🎯 Using backend redirect:', redirectPath);
-      } else if (response?.user?.role) {
-        // Determine redirect based on user role
-        redirectPath = response.user.role === 'ngo' ? '/ngo-dashboard' : '/donor-dashboard';
-        console.log('🎯 Determined redirect from role:', redirectPath);
-      }
-      
-      console.log('🔄 Redirecting to:', redirectPath);
-      router.push(redirectPath);
-      
-    } catch (error) {
-      console.error('❌ LoginForm: Login failed!', error);
-      
-      let errorMessage = 'Login failed. Please try again.';
-      
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      // Specific error handling
-      if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
-        errorMessage = 'Cannot connect to server. Please check if backend is running.';
-      } else if (error.response?.status === 401) {
-        errorMessage = 'Invalid email or password';
-      } else if (error.response?.status === 500) {
-        errorMessage = 'Server error. Please try again later.';
-      }
-      
-      console.log('📢 Showing error to user:', errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setLoading(false);
+    
+    // Check if signIn was successful
+    if (response.success === false) {
+      throw new Error(response.error || 'Login failed');
     }
-  };
+    
+    console.log('✅ LoginForm: Login successful!', response);
+    
+    // ✅ Wait a bit more to ensure state updates
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // ✅ Verify auth state after login
+    const { user: authUser } = useAuth();
+    console.log('🔍 Auth state after login:', {
+      user: authUser,
+      hasUser: !!authUser
+    });
+    
+    toast.success('Welcome back!');
+    
+    // Determine redirect path
+    let redirectPath = '/donor-dashboard'; // fallback
+    
+    if (response?.redirectTo) {
+      redirectPath = response.redirectTo;
+      console.log('🎯 Using backend redirect:', redirectPath);
+    } else if (response?.user?.role) {
+      redirectPath = response.user.role === 'ngo' ? '/ngo-dashboard' : '/donor-dashboard';
+      console.log('🎯 Determined redirect from role:', redirectPath);
+    } else if (response?.role) {
+      redirectPath = response.role === 'ngo' ? '/ngo-dashboard' : '/donor-dashboard';
+      console.log('🎯 Determined redirect from role in response:', redirectPath);
+    }
+    
+    console.log('🔄 Final redirect to:', redirectPath);
+    
+    // ✅ Use window.location for more reliable redirect
+    window.location.href = redirectPath;
+    
+  } catch (error) {
+    console.error('❌ LoginForm: Login failed!', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
+    let errorMessage = 'Login failed. Please try again.';
+    
+    if (error.response?.data?.error) {
+      errorMessage = error.response.data.error;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    // Specific error handling
+    if (error.code === 'NETWORK_ERROR' || error.message === 'Network Error') {
+      errorMessage = 'Cannot connect to server. Please check if backend is running.';
+    } else if (error.response?.status === 401) {
+      errorMessage = 'Invalid email or password';
+    } else if (error.response?.status === 500) {
+      errorMessage = 'Server error. Please try again later.';
+    }
+    
+    console.log('📢 Showing error to user:', errorMessage);
+    toast.error(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="bg-white rounded-lg shadow-xl p-8">

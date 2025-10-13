@@ -13,15 +13,20 @@ export const DonorDashboard = () => {
   const [showPostForm, setShowPostForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     fetchDonations();
   }, [user]);
 
-  const fetchDonations = async () => {
+  const fetchDonations = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
       console.log('📊 Fetching donations for user:', user._id);
       const response = await donationsAPI.getAll({ donorId: user._id });
@@ -33,13 +38,34 @@ export const DonorDashboard = () => {
       toast.error('Failed to load donations');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const handlePostSuccess = () => {
+  const handlePostSuccess = (newDonation) => {
+    console.log('🎉 New donation posted successfully:', newDonation);
+    
+    // ✅ OPTIMISTIC UPDATE: Add new donation to the beginning of the list immediately
+    if (newDonation) {
+      setDonations(prev => [newDonation, ...prev]);
+    } else {
+      // If no newDonation data provided, refresh the list
+      fetchDonations(false);
+    }
+    
+    // ✅ Show success message
+    toast.success('🎉 Donation posted successfully! NGOs near you will be notified.', {
+      duration: 4000,
+      icon: '✅'
+    });
+    
+    // ✅ Close the form
     setShowPostForm(false);
-    fetchDonations(); // Refresh donations
-    toast.success('Donation posted successfully!');
+  };
+
+  const handleRefresh = () => {
+    fetchDonations(false);
+    toast.success('Donations list refreshed!');
   };
 
   const stats = {
@@ -87,6 +113,22 @@ export const DonorDashboard = () => {
       <Navbar title="Donor Dashboard" />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header with Refresh Button */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Donor Dashboard</h1>
+            <p className="text-gray-600 mt-2">Manage your food donations and track their status</p>
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center space-x-2 bg-white text-gray-700 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+        </div>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
@@ -131,7 +173,7 @@ export const DonorDashboard = () => {
         <div className="mb-8">
           <button
             onClick={() => setShowPostForm(true)}
-            className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2 transition-colors shadow-md"
+            className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 flex items-center space-x-2 transition-colors shadow-md hover:shadow-lg"
           >
             <Plus className="h-5 w-5" />
             <span>Post Surplus Food</span>
@@ -140,16 +182,23 @@ export const DonorDashboard = () => {
 
         {/* Donations List */}
         <div className="space-y-6">
-          <h2 className="text-2xl font-bold text-gray-900">Your Food Donations</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-gray-900">Your Food Donations</h2>
+            <span className="text-sm text-gray-600">
+              {donations.length} donation{donations.length !== 1 ? 's' : ''}
+            </span>
+          </div>
           
           {donations.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No donations yet</h3>
-              <p className="text-gray-600 mb-6">Start making a difference by posting your first food donation.</p>
+            <div className="text-center py-12 bg-white rounded-lg shadow">
+              <Package className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-medium text-gray-900 mb-2">No donations yet</h3>
+              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                Start making a difference by posting your first food donation. Help reduce food waste and feed those in need.
+              </p>
               <button
                 onClick={() => setShowPostForm(true)}
-                className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                className="bg-green-600 text-white px-8 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors shadow-md"
               >
                 Post Your First Donation
               </button>

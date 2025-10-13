@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, Navigation } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, Navigation, Search } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 import Cookies from 'js-cookie';
@@ -12,7 +12,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
     confirmPassword: '',
     displayName: '',
     role: 'donor',
-    // ✅ NEW: Location fields for NGOs
     location: {
       address: '',
       coordinates: { lat: null, lng: null }
@@ -29,9 +28,27 @@ export const SignupForm = ({ onSwitchToLogin }) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [gettingLocation, setGettingLocation] = useState(false);
+  
+  // ✅ NEW: Auto-suggestion states
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const addressInputRef = useRef(null);
 
   const { signUp } = useAuth();
   const router = useRouter();
+
+  // ✅ NEW: Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (addressInputRef.current && !addressInputRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -40,7 +57,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       [name]: value
     }));
     
-    // Clear error when user starts typing
     if (errors[name]) {
       setErrors(prev => ({
         ...prev,
@@ -49,7 +65,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
     }
   };
 
-  // ✅ NEW: Handle location changes
   const handleLocationChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -59,7 +74,14 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       }
     }));
 
-    // Clear location errors
+    // ✅ NEW: Fetch address suggestions when user types
+    if (field === 'address' && value.length > 2) {
+      fetchAddressSuggestions(value);
+    } else {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+
     if (errors.location) {
       setErrors(prev => ({
         ...prev,
@@ -68,7 +90,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
     }
   };
 
-  // ✅ NEW: Handle NGO details changes
   const handleNGODetailsChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -79,7 +100,48 @@ export const SignupForm = ({ onSwitchToLogin }) => {
     }));
   };
 
-  // ✅ NEW: Get current location using browser geolocation
+  // ✅ NEW: Fetch address suggestions using OpenStreetMap Nominatim
+  const fetchAddressSuggestions = async (query) => {
+    if (!query || query.length < 3) return;
+    
+    setAddressLoading(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAddressSuggestions(data);
+        setShowSuggestions(true);
+      }
+    } catch (error) {
+      console.error('Error fetching address suggestions:', error);
+    } finally {
+      setAddressLoading(false);
+    }
+  };
+
+  // ✅ NEW: Handle address selection from suggestions
+  const handleAddressSelect = (suggestion) => {
+    const address = suggestion.display_name;
+    const lat = parseFloat(suggestion.lat);
+    const lng = parseFloat(suggestion.lon);
+    
+    setFormData(prev => ({
+      ...prev,
+      location: {
+        address: address,
+        coordinates: { lat, lng }
+      }
+    }));
+    
+    setAddressSuggestions([]);
+    setShowSuggestions(false);
+    toast.success('Address selected successfully!');
+  };
+
+  // ✅ ENHANCED: Get current location with better accuracy and reverse geocoding
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
       toast.error('Geolocation is not supported by your browser');
@@ -89,20 +151,32 @@ export const SignupForm = ({ onSwitchToLogin }) => {
     setGettingLocation(true);
     
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        
-        // Create address from coordinates (you can integrate with a geocoding service later)
-        const address = `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`;
-        
-        handleLocationChange('address', address);
-        handleLocationChange('coordinates', { 
-          lat: latitude, 
-          lng: longitude 
-        });
-        
-        setGettingLocation(false);
-        toast.success('Location detected successfully!');
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // ✅ NEW: Reverse geocode to get address from coordinates
+          const address = await reverseGeocode(latitude, longitude);
+          
+          handleLocationChange('address', address);
+          handleLocationChange('coordinates', { 
+            lat: latitude, 
+            lng: longitude 
+          });
+          
+          setGettingLocation(false);
+          toast.success('Location detected successfully!');
+        } catch (error) {
+          setGettingLocation(false);
+          // Fallback: use coordinates if reverse geocoding fails
+          const fallbackAddress = `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`;
+          handleLocationChange('address', fallbackAddress);
+          handleLocationChange('coordinates', { 
+            lat: latitude, 
+            lng: longitude 
+          });
+          toast.success('Location detected! Consider adding a proper address for better accuracy.');
+        }
       },
       (error) => {
         setGettingLocation(false);
@@ -127,11 +201,41 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 15000,
         maximumAge: 300000
       }
     );
   };
+
+  // ✅ NEW: Reverse geocoding function
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.display_name || `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`;
+      }
+      throw new Error('Reverse geocoding failed');
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      throw error;
+    }
+  };
+
+  // ✅ NEW: Auto-fetch location when NGO role is selected
+  useEffect(() => {
+    if (formData.role === 'ngo' && !formData.location.address && navigator.geolocation) {
+      // Small delay to let user see the location section first
+      const timer = setTimeout(() => {
+        getCurrentLocation();
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [formData.role]);
 
   const validateForm = () => {
     const newErrors = {};
@@ -165,7 +269,7 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       newErrors.role = 'Please select a role';
     }
 
-    // ✅ NEW: NGO-specific validations
+    // NGO-specific validations
     if (formData.role === 'ngo') {
       if (!formData.location.address?.trim()) {
         newErrors.location = 'NGO location address is required';
@@ -175,7 +279,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
         newErrors.location = 'Valid coordinates are required for NGOs';
       }
       
-      // Validate coordinate ranges
       if (formData.location.coordinates?.lat) {
         const lat = formData.location.coordinates.lat;
         if (lat < -90 || lat > 90) {
@@ -209,7 +312,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       console.log('🔄 SignupForm: Attempting registration for:', formData.email, 'as', formData.role);
       console.log('📍 Location data:', formData.role === 'ngo' ? formData.location : 'Not required for donor');
       
-      // Prepare data for API
       const signupData = {
         email: formData.email,
         password: formData.password,
@@ -217,7 +319,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
         role: formData.role
       };
 
-      // ✅ NEW: Add location and NGO details only for NGOs
       if (formData.role === 'ngo') {
         signupData.location = formData.location;
         signupData.ngoDetails = formData.ngoDetails;
@@ -227,7 +328,6 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       
       console.log('✅ SignupForm: Registration successful!', response);
       
-      // Verify cookies were set
       const tokenAfterSignup = Cookies.get('auth_token');
       const userAfterSignup = Cookies.get('user');
       
@@ -240,19 +340,15 @@ export const SignupForm = ({ onSwitchToLogin }) => {
       
       toast.success('Account created successfully!');
       
-      // Use the redirectTo from backend response or determine based on user role
-      let redirectPath = '/donor-dashboard'; // fallback
+      let redirectPath = '/donor-dashboard';
       
       if (response?.redirectTo) {
-        // Use backend-provided redirect path
         redirectPath = response.redirectTo;
         console.log('🎯 Using backend redirect:', redirectPath);
       } else if (response?.user?.role) {
-        // Determine redirect based on user role
         redirectPath = response.user.role === 'ngo' ? '/ngo-dashboard' : '/donor-dashboard';
         console.log('🎯 Determined redirect from role:', redirectPath);
       } else if (formData.role) {
-        // Fallback to form data role
         redirectPath = formData.role === 'ngo' ? '/ngo-dashboard' : '/donor-dashboard';
         console.log('🎯 Fallback redirect from form role:', redirectPath);
       }
@@ -432,7 +528,7 @@ export const SignupForm = ({ onSwitchToLogin }) => {
           )}
         </div>
 
-        {/* ✅ NEW: NGO Location Section */}
+        {/* ✅ ENHANCED: NGO Location Section with Auto-suggestions */}
         {formData.role === 'ngo' && (
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <h3 className="text-lg font-semibold text-blue-900 mb-3 flex items-center">
@@ -443,37 +539,80 @@ export const SignupForm = ({ onSwitchToLogin }) => {
               Your location helps us show you nearby food donations. This is required for NGOs.
             </p>
             
-            {/* Location Address */}
-            <div className="mb-4">
+            {/* Location Address with Auto-suggestions */}
+            <div className="mb-4 relative" ref={addressInputRef}>
               <label className="block text-sm font-medium text-blue-900 mb-2">
                 NGO Address
                 <span className="text-red-500 ml-1">*</span>
               </label>
               <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={formData.location.address}
-                  onChange={(e) => handleLocationChange('address', e.target.value)}
-                  className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                    errors.location ? 'border-red-300 bg-red-50' : 'border-blue-300'
-                  }`}
-                  placeholder="Enter your NGO's full address"
-                  disabled={loading}
-                />
+                <div className="flex-1 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={formData.location.address}
+                    onChange={(e) => handleLocationChange('address', e.target.value)}
+                    onFocus={() => formData.location.address.length > 2 && setShowSuggestions(true)}
+                    className={`block w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      errors.location ? 'border-red-300 bg-red-50' : 'border-blue-300'
+                    }`}
+                    placeholder="Start typing your address..."
+                    disabled={loading}
+                  />
+                  
+                  {/* Loading Indicator */}
+                  {addressLoading && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                  
+                  {/* Address Suggestions Dropdown */}
+                  {showSuggestions && addressSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {addressSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => handleAddressSelect(suggestion)}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 border-b border-gray-100 last:border-b-0 transition-colors"
+                        >
+                          <div className="font-medium text-gray-900 text-sm">
+                            {suggestion.display_name.split(',').slice(0, 2).join(',')}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            {suggestion.display_name}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
                 <button
                   type="button"
                   onClick={getCurrentLocation}
                   disabled={loading || gettingLocation}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2 whitespace-nowrap"
+                  title="Use my current location"
                 >
                   {gettingLocation ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                   ) : (
                     <Navigation className="h-4 w-4" />
                   )}
-                  <span>{gettingLocation ? 'Getting...' : 'Auto'}</span>
+                  <span className="hidden sm:inline">
+                    {gettingLocation ? 'Detecting...' : 'Auto'}
+                  </span>
                 </button>
               </div>
+              
+              {/* Help Text */}
+              <p className="text-xs text-blue-600 mt-2">
+                💡 Start typing your address for suggestions, or use auto-detection
+              </p>
             </div>
 
             {/* Coordinates Display */}

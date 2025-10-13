@@ -1,76 +1,80 @@
 import { FoodDonation } from '../models/FoodDonation.js';
-import { ClaimRequest } from '../models/ClaimRequest.js';
 import { User } from '../models/User.js';
 
 export const donationController = {
   
-  // ✅ UPDATED: Enhanced getAllDonations with proper NGO location filtering
-  async getAllDonations(req, res) {
-    try {
-      const { limit = 50, status, donorId, claimedBy } = req.query;
-      
-      let donations;
-      
-      console.log('🔍 Fetching donations for user:', req.user?.role, req.user?._id);
-      console.log('📊 Query params:', { status, donorId, claimedBy });
+  // ✅ SIMPLE FIXED VERSION: Frontend will handle location filtering
+  // donationController.js - yeh updated function use karo
+async getAllDonations(req, res) {
+  try {
+    console.log('🔍 AUTH USER:', req.user?.role);
+    console.log('📊 Query params:', req.query);
 
-      // ✅ ENHANCED: Location-based filtering for NGOs with operational radius
-      if (req.user && req.user.role === 'ngo') {
-        console.log('🏢 NGO user detected, checking location...');
-        
-        // Check if NGO has location coordinates
-        const ngoUser = await User.findById(req.user._id);
-        if (ngoUser && ngoUser.location && ngoUser.location.coordinates) {
-          const { lat, lng } = ngoUser.location.coordinates;
-          const operationalRadius = ngoUser.ngoDetails?.operationalRadius || 20;
-          
-          console.log(`📍 NGO has location: ${lat}, ${lng} with ${operationalRadius}km radius`);
-          
-          // Use location-based filtering with NGO's operational radius
-          donations = await this.getDonationsForNGO(
-            req.user._id, 
-            { lat, lng }, 
-            parseInt(limit),
-            operationalRadius
-          );
-          console.log(`✅ Found ${donations.length} donations using location-based filtering`);
-        } else {
-          // NGO without location - show all available donations
-          console.log('⚠️ NGO has no location, showing all available donations');
-          donations = await FoodDonation.findAvailable(parseInt(limit));
-        }
-      } 
-      // Other filters (preserve existing functionality)
-      else if (status) {
-        donations = await FoodDonation.findByStatus(status, parseInt(limit));
-      } else if (donorId) {
-        donations = await FoodDonation.findByDonor(donorId, parseInt(limit));
-      } else if (claimedBy) {
-        donations = await FoodDonation.findByClaimedBy(claimedBy, parseInt(limit));
-      } else {
-        // Default: show available donations for donors or unauthenticated users
-        donations = await FoodDonation.findAvailable(parseInt(limit));
-      }
+    const { limit = 100, status, donorId, claimedBy } = req.query;
+    
+    let donations;
 
-      console.log(`🎯 Final result: ${donations.length} donations`);
-
-      res.json({
-        success: true,
-        donations: donations.map(donation => donation.toJSON()),
-        // ✅ ENHANCED: Better metadata about filtering
-        metadata: {
-          totalCount: donations.length,
-          filteredByLocation: (req.user?.role === 'ngo' && donations.length > 0),
-          userRole: req.user?.role,
-          ngoLocation: req.user?.role === 'ngo' ? req.user.location : null,
-          operationalRadius: req.user?.role === 'ngo' ? (req.user.ngoDetails?.operationalRadius || 20) : null
-        }
-      });
-    } catch (error) {
-      console.error('Get donations error:', error);
-      res.status(500).json({ error: 'Failed to get donations' });
+    // ✅ FIXED: Simple query - always return available donations
+    if (status === 'available') {
+      console.log('🔍 Fetching available donations...');
+      donations = await FoodDonation.find({
+        status: 'available',
+        expiryTime: { $gt: new Date() } // Not expired
+      })
+      .populate('donorId', 'displayName email phone')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    } 
+    else if (donorId) {
+      donations = await FoodDonation.find({ donorId })
+        .populate('donorId', 'displayName email phone')
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit));
     }
-  },
+    else if (claimedBy) {
+      donations = await FoodDonation.find({ claimedBy })
+        .populate('donorId', 'displayName email phone')
+        .sort({ createdAt: -1 })
+        .limit(parseInt(limit));
+    }
+    else {
+      // ✅ DEFAULT: Show all available donations (even without status filter)
+      console.log('🔍 Fetching ALL available donations (default)...');
+      donations = await FoodDonation.find({
+        status: 'available',
+        expiryTime: { $gt: new Date() }
+      })
+      .populate('donorId', 'displayName email phone')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+    }
+
+    console.log(`🎯 Final result: ${donations.length} donations`);
+    
+    // ✅ DEBUG: Check what's being returned
+    if (donations.length > 0) {
+      console.log('📍 First donation in response:', {
+        id: donations[0]._id,
+        title: donations[0].title,
+        status: donations[0].status,
+        location: donations[0].location,
+        expiryTime: donations[0].expiryTime
+      });
+    }
+
+    res.json({
+      success: true,
+      donations: donations.map(donation => donation.toJSON()),
+      metadata: {
+        totalCount: donations.length,
+        userRole: req.user?.role
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get donations error:', error);
+    res.status(500).json({ error: 'Failed to get donations' });
+  }
+},
 
   // Get donation by ID
   async getDonationById(req, res) {
@@ -92,7 +96,7 @@ export const donationController = {
     }
   },
 
-  // ✅ ENHANCED: Create new donation with nearby NGO notification
+  // Create new donation
   async createDonation(req, res) {
     try {
       console.log('📥 Received donation data:', JSON.stringify(req.body, null, 2));
@@ -128,21 +132,20 @@ export const donationController = {
         return res.status(404).json({ error: 'Donor not found' });
       }
 
-      // Build location data - handle coordinates properly
+      // Build location data
       const locationData = {
         address: location.address
       };
       
-      // Only add coordinates if both lat and lng are provided
-      if (location.lat !== undefined && location.lng !== undefined) {
+      // Add coordinates if provided
+      if (location.coordinates && location.coordinates.lat !== undefined && location.coordinates.lng !== undefined) {
         locationData.coordinates = {
-          lat: parseFloat(location.lat),
-          lng: parseFloat(location.lng)
+          lat: parseFloat(location.coordinates.lat),
+          lng: parseFloat(location.coordinates.lng)
         };
-        console.log('📍 Location with coordinates:', locationData);
+        console.log('📍 Location with coordinates:', locationData.coordinates);
       } else {
         console.log('📍 Location without coordinates');
-        // Don't include coordinates field at all
       }
 
       const donationData = {
@@ -168,37 +171,10 @@ export const donationController = {
 
       console.log('✅ Donation saved successfully');
 
-      // ✅ NEW: Find and notify nearby NGOs
-      try {
-        if (locationData.coordinates) {
-          const nearbyNGOs = await User.findNGOsNearDonation(
-            locationData.coordinates.lat,
-            locationData.coordinates.lng,
-            20 // 20km radius for notifications
-          );
-
-          console.log(`📢 Notifying ${nearbyNGOs.length} nearby NGOs about new donation`);
-
-          // Here you can implement:
-          // - Push notifications
-          // - Email alerts
-          // - WebSocket events
-          // - etc.
-          
-          // For now, just log the notification
-          nearbyNGOs.forEach(ngo => {
-            console.log(`📨 Would notify NGO: ${ngo.displayName} (${ngo.email})`);
-          });
-        }
-      } catch (notificationError) {
-        console.error('❌ Notification error:', notificationError);
-        // Don't fail the donation creation if notification fails
-      }
-
       res.status(201).json({
         success: true,
         donation: donation.toJSON(),
-        nearbyNGOsCount: nearbyNGOs?.length || 0
+        message: 'Donation created successfully'
       });
     } catch (error) {
       console.error('❌ Create donation error:', error);
@@ -280,9 +256,10 @@ export const donationController = {
         return res.status(403).json({ error: 'Only NGOs can claim donations' });
       }
 
-      // ✅ NEW: Check if NGO is within operational radius of donation
+      // Calculate distance for response
+      let distance = null;
       if (donation.location?.coordinates && ngo.location?.coordinates) {
-        const distance = calculateDistance(
+        distance = calculateDistance(
           ngo.location.coordinates.lat,
           ngo.location.coordinates.lng,
           donation.location.coordinates.lat,
@@ -378,7 +355,7 @@ export const donationController = {
 
       const donations = await FoodDonation.findAvailable();
       
-      // Filter donations by distance (simple implementation)
+      // Filter donations by distance
       const filteredDonations = donations.filter(donation => {
         if (!donation.location?.coordinates) return false;
         
@@ -404,7 +381,7 @@ export const donationController = {
   // Get donation statistics
   async getDonationStats(req, res) {
     try {
-      const allDonations = await FoodDonation.findAll(1000); // Get more for stats
+      const allDonations = await FoodDonation.findAll(1000);
       
       const stats = {
         total: allDonations.length,
@@ -431,105 +408,7 @@ export const donationController = {
     }
   },
 
-  // ✅ ENHANCED: Get donations for NGO based on location with operational radius
-  async getDonationsForNGO(ngoId, ngoLocation, limit = 50, operationalRadius = 20) {
-    try {
-      console.log(`🔍 Searching donations for NGO ${ngoId} at location:`, ngoLocation);
-      console.log(`🎯 Operational radius: ${operationalRadius}km`);
-      
-      const { lat, lng } = ngoLocation;
-      if (!lat || !lng) {
-        console.log('❌ Invalid NGO location, returning all available donations');
-        return await FoodDonation.findAvailable(limit);
-      }
-
-      // Start with smaller radius and progressively increase up to operational radius
-      let radiusKm = 5;
-      let maxRadiusKm = operationalRadius; // Use NGO's operational radius as maximum
-      let donations = [];
-
-      while (radiusKm <= maxRadiusKm && donations.length === 0) {
-        console.log(`🔍 Searching within ${radiusKm}km radius...`);
-        
-        // Get all available donations
-        const allDonations = await FoodDonation.findAvailable(1000);
-        console.log(`📊 Total available donations: ${allDonations.length}`);
-        
-        // Filter donations by distance
-        donations = allDonations.filter(donation => {
-          // Skip donations without coordinates
-          if (!donation.location || !donation.location.coordinates || 
-              donation.location.coordinates.lat === undefined || 
-              donation.location.coordinates.lng === undefined) {
-            return false;
-          }
-          
-          const donationLat = donation.location.coordinates.lat;
-          const donationLng = donation.location.coordinates.lng;
-          
-          // Skip if coordinates are invalid
-          if (isNaN(donationLat) || isNaN(donationLng)) {
-            return false;
-          }
-          
-          const distance = calculateDistance(
-            parseFloat(lat),
-            parseFloat(lng),
-            parseFloat(donationLat),
-            parseFloat(donationLng)
-          );
-          
-          const isWithinRadius = distance <= radiusKm;
-          if (isWithinRadius) {
-            console.log(`📍 Donation ${donation._id} is ${distance.toFixed(2)}km away`);
-          }
-          
-          return isWithinRadius;
-        });
-
-        console.log(`📦 Found ${donations.length} donations within ${radiusKm}km`);
-
-        if (donations.length > 0) {
-          console.log(`✅ Found ${donations.length} donations within ${radiusKm}km radius`);
-          break;
-        }
-
-        radiusKm += 5; // Increase radius by 5km
-        if (radiusKm <= maxRadiusKm) {
-          console.log(`🔄 Expanding search radius to ${radiusKm}km`);
-        }
-      }
-
-      // Sort by distance and limit results
-      donations.sort((a, b) => {
-        const distanceA = calculateDistance(
-          parseFloat(lat),
-          parseFloat(lng),
-          a.location.coordinates.lat,
-          a.location.coordinates.lng
-        );
-        const distanceB = calculateDistance(
-          parseFloat(lat),
-          parseFloat(lng),
-          b.location.coordinates.lat,
-          b.location.coordinates.lng
-        );
-        return distanceA - distanceB;
-      });
-
-      const finalResults = donations.slice(0, limit);
-      console.log(`🎯 Final results: ${finalResults.length} donations after sorting and limiting`);
-      
-      return finalResults;
-    } catch (error) {
-      console.error('❌ Error getting donations for NGO:', error);
-      // Fallback to all available donations
-      console.log('🔄 Falling back to all available donations');
-      return await FoodDonation.findAvailable(limit);
-    }
-  },
-
-  // ✅ NEW: Get donations specifically for an NGO (separate endpoint)
+  // Get donations specifically for an NGO
   async getDonationsForMyNGO(req, res) {
     try {
       if (req.user.role !== 'ngo') {
@@ -537,33 +416,14 @@ export const donationController = {
       }
 
       const { limit = 50 } = req.query;
-      const ngo = await User.findById(req.user._id);
       
-      if (!ngo.location || !ngo.location.coordinates) {
-        return res.status(400).json({ 
-          error: 'NGO location not set. Please update your profile with location information.' 
-        });
-      }
-
-      const { lat, lng } = ngo.location.coordinates;
-      const operationalRadius = ngo.ngoDetails?.operationalRadius || 20;
-
-      const donations = await this.getDonationsForNGO(
-        req.user._id,
-        { lat, lng },
-        parseInt(limit),
-        operationalRadius
-      );
+      // Return donations claimed by this NGO
+      const donations = await FoodDonation.findByClaimedBy(req.user._id, parseInt(limit));
 
       res.json({
         success: true,
         donations: donations.map(donation => donation.toJSON()),
-        metadata: {
-          totalCount: donations.length,
-          ngoLocation: { lat, lng },
-          operationalRadius,
-          searchRadius: donations.length > 0 ? 'Within operational radius' : 'Expanded search'
-        }
+        count: donations.length
       });
     } catch (error) {
       console.error('Get donations for my NGO error:', error);

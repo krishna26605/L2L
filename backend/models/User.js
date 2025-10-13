@@ -193,6 +193,29 @@ userSchema.statics.findNGOsByLocation = function(lat, lng, radiusKm = 20) {
   });
 };
 
+// Add this to your User model (models/User.js)
+userSchema.statics.getDonationsForNGO = async function(ngoId, filters = {}) {
+  try {
+    const Donation = mongoose.model('FoodDonation');
+    let query = { claimedBy: ngoId };
+
+    // Apply filters
+    if (filters.status) {
+      query.status = filters.status;
+    }
+
+    const donations = await Donation.find(query)
+      .populate('donorId', 'displayName email phone')
+      .sort({ createdAt: -1 })
+      .limit(filters.limit || 50);
+
+    return donations;
+  } catch (error) {
+    console.error('❌ Get donations for NGO error:', error);
+    throw error;
+  }
+};
+
 // ✅ NEW: Find NGOs within radius of a donation location
 userSchema.statics.findNGOsNearDonation = function(donationLat, donationLng, radiusKm = 20) {
   return this.find({
@@ -209,6 +232,8 @@ userSchema.statics.findNGOsNearDonation = function(donationLat, donationLng, rad
     isActive: true
   });
 };
+
+
 
 // ✅ NEW: Get all NGOs with location data
 userSchema.statics.getAllNGOsWithLocation = function(limit = 100) {

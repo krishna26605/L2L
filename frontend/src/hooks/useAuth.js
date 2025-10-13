@@ -76,28 +76,43 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const signIn = async (email, password) => {
-    try {
-      console.log('🔐 useAuth: Attempting login for:', email);
+  try {
+    console.log('🔐 useAuth: Attempting login for:', email);
+    
+    const response = await authAPI.login(email, password);
+    console.log('✅ useAuth: Login successful - full response:', response.data);
+    
+    if (response.data) {
+      const { user, token } = response.data;
       
-      const response = await authAPI.login(email, password);
-      console.log('✅ useAuth: Login successful - full response:', response.data);
+      // ✅ Wait a moment to ensure localStorage is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      if (response.data) {
-        setUser(response.data.user);
-        console.log('👤 User set in context:', { 
-          email: response.data.user.email,
-          role: response.data.user.role,
-          hasLocation: !!(response.data.user.location)
-        });
-        return response.data;
-      } else {
-        throw new Error('Invalid response format from server');
-      }
-    } catch (error) {
-      console.error('❌ useAuth: SignIn error:', error.response?.data || error.message);
-      throw error;
+      // ✅ Verify data was stored in localStorage
+      const storedData = AuthStorage.getAuthData();
+      console.log('💾 Verified localStorage after login:', {
+        token: !!storedData.token,
+        user: !!storedData.user,
+        userRole: storedData.user?.role
+      });
+      
+      // ✅ Update React state
+      setUser(user);
+      console.log('👤 User set in context:', { 
+        email: user.email,
+        role: user.role,
+        hasLocation: !!(user.location)
+      });
+      
+      return response.data;
+    } else {
+      throw new Error('Invalid response format from server');
     }
-  };
+  } catch (error) {
+    console.error('❌ useAuth: SignIn error:', error.response?.data || error.message);
+    throw error;
+  }
+};
 
   // ✅ UPDATED: signUp function to handle new NGO location data structure
   const signUp = async (signupData) => {

@@ -217,7 +217,7 @@ const handleSubmit = async (e) => {
       }
     }
 
-    // ✅ FIXED: Proper location structure with coordinates
+    // Proper location structure with coordinates
     const donationData = {
       title: formData.title,
       description: formData.description,
@@ -230,7 +230,7 @@ const handleSubmit = async (e) => {
       },
       location: {
         address: formData.location.address,
-        coordinates: {  // ✅ YEH IMPORTANT HAI - coordinates object me daalo
+        coordinates: {
           lat: formData.location.lat,
           lng: formData.location.lng
         }
@@ -244,12 +244,15 @@ const handleSubmit = async (e) => {
     }
 
     console.log('📦 Submitting donation data:', JSON.stringify(donationData, null, 2));
-    console.log('📍 Location with coordinates:', donationData.location);
     
     const response = await donationsAPI.create(donationData);
     console.log('✅ Donation posted successfully:', response.data);
     
-    toast.success('🎉 Donation posted successfully! NGOs near you will be notified.');
+    // 🎉 SUCCESS: Show success message
+    toast.success('🎉 Donation posted successfully! NGOs near you will be notified.', {
+      duration: 4000,
+      icon: '✅'
+    });
     
     // Reset form
     setFormData({
@@ -264,11 +267,13 @@ const handleSubmit = async (e) => {
     setImage(null);
     setImagePreview('');
     
-    if (onSuccess) {
-      onSuccess();
-    } else {
-      onClose();
-    }
+    // ✅ Close the form after successful submission
+    setTimeout(() => {
+      if (onSuccess) {
+        onSuccess(response.data); // Pass the new donation data to parent
+      }
+      onClose(); // Close the form modal
+    }, 1500); // Small delay to show success message
     
   } catch (error) {
     console.error('❌ Post donation error:', error);
@@ -278,7 +283,11 @@ const handleSubmit = async (e) => {
       errorMessage = error.response.data.error;
     }
     
-    toast.error(`Donation failed: ${errorMessage}`);
+    // 🚨 ERROR: Show detailed error message
+    toast.error(`Donation failed: ${errorMessage}`, {
+      duration: 5000,
+      icon: '❌'
+    });
   } finally {
     setLoading(false);
   }

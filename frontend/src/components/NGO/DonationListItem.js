@@ -8,38 +8,40 @@ export const DonationListItem = ({ donation, onClaim, onViewRoute }) => {
 
   // ✅ useEffect mein image URL process karo
   useEffect(() => {
-    const processImageUrl = (url) => {
-      if (!url) return '';
-      
-      console.log('🖼️ Original image URL:', url);
-      
-      // ✅ Case 1: Agar relative URL hai (/uploads/filename.jpg)
-      if (url.startsWith('/uploads/')) {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
-        const fullUrl = `${backendUrl}${url}`;
-        console.log('✅ Converted to backend URL:', fullUrl);
-        return fullUrl;
-      }
-      
-      // ✅ Case 2: Agar wrong frontend URL hai
-      if (url.includes('localhost:3000/api/uploads')) {
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
-        const correctedUrl = url.replace('http://localhost:3000/api/uploads', '/uploads');
-        const fullUrl = `${backendUrl}${correctedUrl}`;
-        console.log('🔄 Fixed wrong URL:', fullUrl);
-        return fullUrl;
-      }
-      
-      // ✅ Case 3: Agar pehle se hi correct backend URL hai
-      if (url.includes('localhost:5000/uploads')) {
-        console.log('✅ Already correct backend URL');
-        return url;
-      }
-      
-      // ✅ Case 4: Koi aur format
-      console.log('⚠️ Unknown URL format:', url);
-      return url;
-    };
+    // In the useEffect of DonationListItem.js, update the processImageUrl function:
+const processImageUrl = (url) => {
+  if (!url) return '';
+  
+  console.log('🖼️ NGO Dashboard - Original image URL:', url);
+  
+  // ✅ Case 1: If it's already a full backend URL, use it directly
+  if (url.includes('localhost:5000/uploads')) {
+    console.log('✅ Already correct backend URL');
+    return url;
+  }
+  
+  // ✅ Case 2: If it contains frontend URL, replace with backend URL
+  if (url.includes('localhost:3000/api/uploads')) {
+    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const correctedUrl = url.replace('http://localhost:3000/api/uploads', `${backendUrl}/uploads`);
+    console.log('🔄 Fixed frontend URL to backend:', correctedUrl);
+    return correctedUrl;
+  }
+  
+  // ✅ Case 3: If it's just a filename or relative path
+  if (url.startsWith('/uploads/') || !url.includes('://')) {
+    const backendUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    // Remove any leading slash to avoid double slashes
+    const cleanPath = url.startsWith('/') ? url.substring(1) : url;
+    const fullUrl = `${backendUrl}/${cleanPath}`;
+    console.log('✅ Built full backend URL:', fullUrl);
+    return fullUrl;
+  }
+  
+  // ✅ Case 4: Return as-is (might be external URL)
+  console.log('⚠️ Unknown URL format, using as-is:', url);
+  return url;
+};
 
     setImageUrl(processImageUrl(donation.imageUrl));
   }, [donation.imageUrl]);

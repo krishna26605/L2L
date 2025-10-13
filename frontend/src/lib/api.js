@@ -33,7 +33,18 @@ export const AuthStorage = {
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
+  withCredentials: true, // Add this for cookies if needed
 });
+
+// Add this to see actual network requests
+if (typeof window !== 'undefined') {
+  // Log all fetch requests (for debugging)
+  const originalFetch = window.fetch;
+  window.fetch = function(...args) {
+    console.log('🌐 Fetch called:', args[0], args[1]);
+    return originalFetch.apply(this, args);
+  };
+}
 
 // ✅ THEN: Add interceptors
 api.interceptors.request.use(
