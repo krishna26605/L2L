@@ -1,0 +1,48 @@
+# Step 1: Add proper .gitignore
+cat > .gitignore << EOF
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+*.tgz
+*.tar.gz
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
+
+# Step 2: Remove node_modules from tracking
+git rm -r --cached node_modules
+
+# Step 3: Commit and push
+git add .gitignore
+git commit -m "Add .gitignore and remove node_modules from tracking"
+git push origin main
